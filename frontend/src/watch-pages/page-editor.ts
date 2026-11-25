@@ -6284,7 +6284,7 @@ export class WaPageEditor extends LitElement {
     .pe-screen-off { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 4px 5px; margin-top: 2px; font-size: 12px; }
     .pe-screen-off-l { color: var(--wa-muted); }
     .pe-off-chip {
-      display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border: 1px dashed var(--wa-line-strong); border-radius: 12px;
+      display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border: 1px dashed var(--wa-line-strong); border-radius: 14px;
       background: transparent; color: var(--wa-ink); font: inherit; font-size: 12px; cursor: pointer;
     }
     button.pe-off-chip:hover:not(:disabled) { border-style: solid; background: var(--wa-hover); }
@@ -6296,7 +6296,7 @@ export class WaPageEditor extends LitElement {
     .pe-screen-toast {
       position: absolute; left: 50%; bottom: 72px; z-index: 12; transform: translateX(-50%);
       display: inline-flex; align-items: center; gap: 8px; max-width: calc(100% - 24px); padding: 8px 8px 8px 14px;
-      border-radius: 10px; background: var(--wa-ink); color: var(--wa-card); box-shadow: var(--wa-shadow-float, var(--wa-shadow-pop));
+      border-radius: 12px; background: var(--wa-ink); color: var(--wa-card); box-shadow: var(--wa-shadow-float, var(--wa-shadow-pop));
       font-size: 12.5px; line-height: 1.35;
     }
     .pe-screen-toast-x { flex: none; display: inline-grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: inherit; cursor: pointer; }
@@ -6498,7 +6498,7 @@ export class WaPageEditor extends LitElement {
     /* A tile group: its card under the picked tiles, and the line under a
        grouped tile's name (group-settings.ts). */
     .pe-group .ts-body { border: 0; margin: 0 0 8px; padding: 0; min-width: 0; }
-    .pe-group-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 0 0 8px; padding: 6px 10px; border-radius: 8px; background: var(--wa-panel); font-size: 12px; color: var(--wa-muted); }
+    .pe-group-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 0 0 8px; padding: 6px 10px; border-radius: 10px; background: var(--wa-panel); font-size: 12px; color: var(--wa-muted); }
     .pe-group-words { display: inline-flex; align-items: center; gap: 6px; margin-right: auto; }
     .pe-group-words .ui-icon { width: 14px; height: 14px; }
     /* The tile under the pointer: a solid tint and a thin ring, the

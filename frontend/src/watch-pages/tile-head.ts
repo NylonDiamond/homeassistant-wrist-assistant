@@ -284,7 +284,7 @@ export const tileHeadStyles = css`
   .ts-head-f { display: grid; grid-template-columns: var(--ts-top-lab) minmax(0, 1fr); align-items: center; gap: 10px; flex: 1 1 320px; min-width: 0; }
   .ts-head .ts-head-f .ts-typing { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
   .ts-head .ts-head-f input[type=text] {
-    width: 100%; min-width: 0; height: 36px; min-height: 36px; padding: 0 12px; font-size: 14px; font-weight: 500; border-radius: 9px;
+    width: 100%; min-width: 0; height: 36px; min-height: 36px; padding: 0 12px; font-size: 14px; font-weight: 500; border-radius: 12px;
     border-color: var(--wa-line-strong); background-color: var(--wa-field);
   }
   .ts-head-none { font-size: 13px; color: var(--wa-muted); }

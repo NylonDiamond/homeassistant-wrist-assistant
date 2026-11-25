@@ -350,7 +350,7 @@ export const helpSheetStyles = css`
   .hs-sec > .hs-more { align-self: flex-start; }
   .hs-guides { display: flex; flex-direction: column; gap: 8px; }
   a.hs-guide {
-    display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 8px; text-decoration: none; font-size: 13px;
+    display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 10px; text-decoration: none; font-size: 13px;
     color: var(--wa-ink); border: 1px solid var(--wa-line-strong); background: color-mix(in srgb, var(--wa-ink) 3%, var(--wa-card));
   }
   a.hs-guide:hover { background: var(--wa-hover); }

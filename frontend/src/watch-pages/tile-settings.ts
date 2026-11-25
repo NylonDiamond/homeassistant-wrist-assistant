@@ -3840,7 +3840,7 @@ export const tileSettingsStyles = css`
   /* The iPhone tag on a card or group only the iPhone reads. */
   .ts-dev-tag {
     display: inline-flex; align-items: center; gap: 3px; flex: none; margin-left: 6px; padding: 0 6px; height: 16px;
-    border: 1px solid var(--wa-line-strong); border-radius: 8px; vertical-align: 1px;
+    border: 1px solid var(--wa-line-strong); border-radius: 10px; vertical-align: 1px;
     font-size: 10.5px; font-weight: 600; letter-spacing: 0; color: var(--wa-muted);
   }
   .ts-dev-tag svg { width: 10px; height: 10px; flex: none; }
@@ -3977,11 +3977,11 @@ export const tileSettingsStyles = css`
   .ts-arr-looks .pc-opt { min-width: 0; padding: 4px 4px 5px; }
   .ts-arr-looks .pc-size-large .pc-pic { width: 100%; height: 52px; overflow: hidden; }
   .ts-arr-looks .pc-label { font-size: 11.5px; }
-  .ts-arr-ask { display: flex; flex-direction: column; gap: 4px; padding: 10px 11px; border: 1px solid var(--wa-pick-line, var(--wa-line-strong)); border-radius: 9px; background: var(--wa-sel-bg); color: var(--wa-ink); font-size: 12.5px; line-height: 1.4; }
+  .ts-arr-ask { display: flex; flex-direction: column; gap: 4px; padding: 10px 11px; border: 1px solid var(--wa-pick-line, var(--wa-line-strong)); border-radius: 12px; background: var(--wa-sel-bg); color: var(--wa-ink); font-size: 12.5px; line-height: 1.4; }
   .ts-arr-ask > p { margin: 0; }
   .ts-arr-ask > p.sub { font-size: 12px; color: var(--wa-pick-ink, var(--wa-label)); }
   .ts-arr-ask-row { display: flex; gap: 8px; margin-top: 6px; }
-  .ts-arr-done { display: flex; align-items: center; gap: 10px; padding: 6px 7px 6px 11px; border: 1px solid var(--wa-line-strong); border-radius: 9px; background: var(--wa-panel); font-size: 12.5px; }
+  .ts-arr-done { display: flex; align-items: center; gap: 10px; padding: 6px 7px 6px 11px; border: 1px solid var(--wa-line-strong); border-radius: 12px; background: var(--wa-panel); font-size: 12.5px; }
   .ts-arr-done > span { flex: 1 1 auto; min-width: 0; }
   .ts-arr-pic {
     display: grid; place-items: center; width: 100%; min-height: 190px; margin: 0; padding: 20px;
@@ -4001,7 +4001,7 @@ export const tileSettingsStyles = css`
   }
   .ts-arr-side, .ts-arr-stage, .ts-arr-tools { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
   .ts-arr-parts { display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); gap: 5px; }
-  .ts-arr-part { display: flex; align-items: stretch; min-width: 0; border: 1px solid var(--wa-line-strong); border-radius: 8px; background: var(--wa-panel); overflow: hidden; }
+  .ts-arr-part { display: flex; align-items: stretch; min-width: 0; border: 1px solid var(--wa-line-strong); border-radius: 10px; background: var(--wa-panel); overflow: hidden; }
   .ts-arr-part.on { border-color: var(--wa-accent); background: var(--wa-sel-bg); }
   .ts-arr-part.off .ts-arr-part-name { color: var(--wa-muted); }
   .ts-arr-part button { border: 0; background: transparent; color: var(--wa-ink); cursor: pointer; font: inherit; }
@@ -4016,7 +4016,7 @@ export const tileSettingsStyles = css`
   .ts-top .ts-arr-place .seg.wide button { flex: 1 1 auto; padding: 0 8px; white-space: nowrap; }
   .ts-arr-spots {
     display: grid; grid-template-columns: repeat(3, 26px); gap: 3px; padding: 3px;
-    border: 1px solid var(--wa-line-strong); border-radius: 9px;
+    border: 1px solid var(--wa-line-strong); border-radius: 12px;
   }
   .ts-arr-spot { display: grid; place-items: center; width: 26px; height: 22px; padding: 0; border: 0; border-radius: 6px; background: transparent; cursor: pointer; }
   .ts-arr-spot > span { width: 8px; height: 8px; border-radius: 2px; background: color-mix(in srgb, var(--wa-ink) 30%, transparent); }
@@ -4179,7 +4179,7 @@ export const tileSettingsStyles = css`
   .ts-kind { min-width: 0; padding: 8px 12px 0; border-bottom: 1px solid var(--wa-line); }
   .ts-kind:last-child { border-bottom: 0; }
   .ts-kind-tag {
-    flex: none; padding: 1px 5px; border: 1px solid var(--wa-line-strong); border-radius: 5px;
+    flex: none; padding: 1px 5px; border: 1px solid var(--wa-line-strong); border-radius: 7px;
     font-size: 10px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--wa-muted);
   }
   .ts-kind > .ts-sec { padding: 2px 0 10px; border-bottom: 0; }
@@ -4258,7 +4258,7 @@ export const tileSettingsStyles = css`
   /* Its own class names, not .ts-arr: that one is the Arrangement card's,
      whose column rule would reach the arrows. */
   button.ts-slide-arr {
-    width: 100%; max-width: 150px; min-width: 0; padding: 6px 8px; border: 1px solid var(--wa-line); border-radius: 8px;
+    width: 100%; max-width: 150px; min-width: 0; padding: 6px 8px; border: 1px solid var(--wa-line); border-radius: 10px;
     background: var(--wa-bg, rgba(0, 0, 0, .25)); cursor: pointer; font: inherit; font-size: 11.5px; line-height: 1.25;
     color: var(--wa-muted); text-align: center; overflow-wrap: anywhere;
   }
@@ -4268,7 +4268,7 @@ export const tileSettingsStyles = css`
   button.ts-slide-arr.on { border-color: var(--ts-blue, #4c8dff); box-shadow: 0 0 0 1px var(--ts-blue, #4c8dff); }
   button.ts-slide-arr:hover:not(:disabled) { border-color: var(--ts-blue, #4c8dff); }
   button.ts-slide-arr:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  .ts-slide-detail { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; padding: 6px 10px; border: 1px solid var(--wa-line); border-radius: 9px; background: rgba(0, 0, 0, .18); }
+  .ts-slide-detail { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; padding: 6px 10px; border: 1px solid var(--wa-line); border-radius: 12px; background: rgba(0, 0, 0, .18); }
   .ts-slide-detail[hidden] { display: none; }
   .ts-groups .ts-slide-detail { --wa-lab: calc(var(--ts-lab) - 22px); }
   @container insp (width < 420px) {

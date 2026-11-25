@@ -146,7 +146,7 @@ export const howToStyles = css`
   }
   .howto-chip {
     flex: none; width: 38px; height: 38px; box-sizing: border-box; display: grid; place-items: center;
-    border: 1px solid var(--howto-hue, var(--wa-stage-hue, var(--wa-line-strong))); border-radius: 10px; color: var(--wa-ink);
+    border: 1px solid var(--howto-hue, var(--wa-stage-hue, var(--wa-line-strong))); border-radius: 12px; color: var(--wa-ink);
   }
   .howto-art { width: 22px; height: 22px; }
   .howto-t { display: flex; flex-direction: column; gap: 3px; min-width: 0; font-size: 13px; line-height: 1.4; }

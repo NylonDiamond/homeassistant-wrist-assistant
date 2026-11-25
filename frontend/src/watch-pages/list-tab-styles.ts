@@ -47,7 +47,7 @@ export const listTabStyles = css`
   .pk-shape-lead { font-size: 12px; color: var(--wa-muted); }
   .pk-shape select {
     max-width: 180px; font: inherit; font-size: 13px; font-weight: 500; color: var(--wa-ink); cursor: pointer; height: 28px;
-    padding: 0 26px 0 10px; border-radius: 6px; border: 1px solid var(--wa-line-strong); background-color: var(--wa-input);
+    padding: 0 26px 0 10px; border-radius: 8px; border: 1px solid var(--wa-line-strong); background-color: var(--wa-input);
     appearance: none; -webkit-appearance: none;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238a8a8f' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
     background-repeat: no-repeat; background-position: right 8px center; background-size: 12px;
@@ -57,7 +57,7 @@ export const listTabStyles = css`
   .pk-shape select:focus-visible { outline: none; border-color: var(--wa-accent); box-shadow: var(--wa-ring); }
   .pk-search {
     display: flex; align-items: center; gap: 8px; flex: none; width: 260px; max-width: 45vw;
-    height: 28px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--wa-line-strong); background: var(--wa-field);
+    height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--wa-line-strong); background: var(--wa-field);
   }
   .pk-search:hover { border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); }
   .pk-search:focus-within { border-color: var(--wa-accent); box-shadow: var(--wa-ring); }
@@ -121,7 +121,7 @@ export const listTabStyles = css`
      question is open; always out on a touch screen, which has no hover. */
   .ap-del {
     display: inline-flex; align-items: center; justify-content: center; flex: none; width: 24px; height: 24px; padding: 0;
-    border-radius: 6px; border: 1px solid var(--wa-line); background: var(--wa-card); color: var(--wa-muted); cursor: pointer;
+    border-radius: 8px; border: 1px solid var(--wa-line); background: var(--wa-card); color: var(--wa-muted); cursor: pointer;
     opacity: 0; transition: opacity .12s ease-out;
   }
   .ap-card:hover .ap-del, .ap-card:focus-within .ap-del, .ap-card.asking .ap-del { opacity: 1; }

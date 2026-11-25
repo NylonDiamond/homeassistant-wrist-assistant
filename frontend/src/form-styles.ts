@@ -117,7 +117,7 @@ export const formButtonStyles = css`
        a number field in the inspector read as one family. */
     select {
       font: inherit; font-size: 13px; font-weight: 500; color: var(--wa-ink); cursor: pointer; height: 28px;
-      padding: 0 26px 0 10px; border-radius: 6px; border: 1px solid var(--wa-line-strong); background-color: var(--wa-input);
+      padding: 0 26px 0 10px; border-radius: 8px; border: 1px solid var(--wa-line-strong); background-color: var(--wa-input);
       appearance: none; -webkit-appearance: none;
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238a8a8f' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
       background-repeat: no-repeat; background-position: right 8px center; background-size: 12px;
@@ -127,7 +127,7 @@ export const formButtonStyles = css`
     select:focus-visible { outline: none; border-color: var(--wa-accent); box-shadow: var(--wa-ring); }
     input[type=text], input[type=number], input[type=search], input[type=url], textarea {
       font: inherit; font-size: 13px; font-weight: 500; color: var(--wa-ink); min-height: 28px;
-      padding: 4px 10px; border-radius: 6px; border: 1px solid var(--wa-line-strong); background: var(--wa-input);
+      padding: 4px 10px; border-radius: 8px; border: 1px solid var(--wa-line-strong); background: var(--wa-input);
       transition: border-color .12s ease-out, box-shadow .12s ease-out;
     }
     input[type=text]:hover:not(:disabled), input[type=number]:hover:not(:disabled), textarea:hover:not(:disabled) { border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); }
@@ -187,7 +187,7 @@ export const formButtonStyles = css`
     input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 1.5px var(--wa-range-outline), 0 0 0 4px color-mix(in srgb, var(--wa-accent) 40%, transparent); }
     input[type=range]:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 1.5px var(--wa-range-outline), 0 0 0 4px color-mix(in srgb, var(--wa-accent) 40%, transparent); }
     input[type=range]:disabled { opacity: .45; cursor: default; }
-    input[type=color] { border: 1px solid var(--wa-line); border-radius: 6px; background: var(--wa-input); padding: 2px; cursor: pointer; }
+    input[type=color] { border: 1px solid var(--wa-line); border-radius: 8px; background: var(--wa-input); padding: 2px; cursor: pointer; }
 `;
 
 /** The segmented control, small and form sized (`segField`). */
@@ -280,11 +280,11 @@ export const formFieldStyles = css`
     /* The controls in an inspector row: 26px, 12px text, a soft fill and no
        ring until hovered, so a card of twenty rows is not twenty boxes. */
     :is(.sec-b, .value-pop) .field :is(input[type=text], input[type=number], input[type=time], select) {
-      height: 28px; min-height: 28px; padding: 0 9px; font-size: 13px; border-radius: 6px;
+      height: 28px; min-height: 28px; padding: 0 9px; font-size: 13px; border-radius: 8px;
       border-color: var(--wa-line-strong); background-color: var(--wa-field);
     }
     :is(.sec-b, .value-pop) .field select { padding-right: 22px; background-position: right 6px center; background-size: 12px; }
-    :is(.sec-b, .value-pop) .field textarea { font-size: 12px; padding: 5px 8px; border-radius: 6px; border-color: var(--wa-line-strong); background: var(--wa-field); }
+    :is(.sec-b, .value-pop) .field textarea { font-size: 12px; padding: 5px 8px; border-radius: 8px; border-color: var(--wa-line-strong); background: var(--wa-field); }
     :is(.sec-b, .value-pop) .field input[type=number] { -moz-appearance: textfield; appearance: textfield; }
     :is(.sec-b, .value-pop) .field input[type=number]::-webkit-inner-spin-button,
     :is(.sec-b, .value-pop) .field input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
@@ -326,7 +326,7 @@ export const formFieldStyles = css`
     .color-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
     .color-box {
       flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 0 0 6px;
-      border-radius: 6px; border: 1px solid var(--wa-line-strong); background: var(--wa-field);
+      border-radius: 8px; border: 1px solid var(--wa-line-strong); background: var(--wa-field);
     }
     .color-box:hover { border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); }
     .color-box:focus-within { border-color: var(--wa-accent); box-shadow: var(--wa-ring); }
@@ -517,7 +517,7 @@ export const formEntityStyles = css`
        row is the edit target; the x beside it removes the entity. */
     .ent-anchor { position: relative; min-width: 0; }
     .ent-chosen {
-      display: flex; align-items: center; height: 28px; min-width: 0; border-radius: 6px;
+      display: flex; align-items: center; height: 28px; min-width: 0; border-radius: 8px;
       background: var(--wa-field); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wa-ent) 22%, transparent);
     }
     .ent-chosen:hover { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wa-ent) 50%, transparent); }
@@ -543,7 +543,7 @@ export const formEntityStyles = css`
     button.ent-clear svg { width: 12px; height: 12px; display: block; }
 
     .entity-results {
-      border: 1px solid var(--wa-line); border-radius: 10px; margin-top: 6px; max-height: 340px; overflow: auto;
+      border: 1px solid var(--wa-line); border-radius: 12px; margin-top: 6px; max-height: 340px; overflow: auto;
       background: var(--wa-raised); padding: 4px; box-shadow: 0 10px 28px rgba(0,0,0,.22);
     }
     /* In an inspector card the list floats over the rows under the box, like
@@ -592,7 +592,7 @@ export const formEntityStyles = css`
        it is also the key to reading them everywhere else. */
     .entity-current {
       display: flex; gap: 6px; align-items: center; font-size: 12px; margin: 0 0 2px;
-      padding: 3px 8px 3px 4px; border-radius: 6px;
+      padding: 3px 8px 3px 4px; border-radius: 8px;
       border: 1px solid color-mix(in srgb, var(--wa-ent) 28%, var(--wa-line)); background: var(--wa-ent-bg);
     }
     .entity-current .ent-ico { width: 20px; height: 20px; border-radius: 5px; background: color-mix(in srgb, var(--wa-ent) 18%, transparent); color: var(--wa-ent); }
@@ -620,7 +620,7 @@ export const formEntityStyles = css`
     .field.sym-field.no-label { grid-template-columns: minmax(0, 1fr); }
     .sym-line-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
     .sym-box {
-      flex: 1; min-width: 0; display: flex; align-items: center; height: 30px; border-radius: 7px;
+      flex: 1; min-width: 0; display: flex; align-items: center; height: 30px; border-radius: 9px;
       background: var(--wa-field); box-shadow: inset 0 0 0 1px var(--wa-line-strong);
       transition: box-shadow .12s ease-out;
     }
@@ -659,7 +659,7 @@ export const formEntityStyles = css`
     button.sym-clear:hover { background: var(--wa-panel); color: var(--wa-ink); }
     button.sym-clear svg { width: 12px; height: 12px; display: block; }
     .sym-field > .sym-menu {
-      grid-column: 1 / -1; margin: 2px 0 4px; padding: 8px; border-radius: 10px;
+      grid-column: 1 / -1; margin: 2px 0 4px; padding: 8px; border-radius: 12px;
       border: 1px solid var(--wa-line-strong, var(--wa-line)); background: var(--wa-raised, var(--wa-card));
       box-shadow: 0 10px 28px rgba(0,0,0,.22);
     }
@@ -684,7 +684,7 @@ export const formEntityStyles = css`
     .sym-search { position: relative; flex: 1; min-width: 0; display: flex; align-items: center; }
     .sym-search > svg { position: absolute; left: 9px; width: 14px; height: 14px; color: var(--wa-muted); pointer-events: none; }
     .sym-search > input[type=search] {
-      width: 100%; min-width: 0; height: 32px; box-sizing: border-box; padding: 0 10px 0 29px; border-radius: 9px;
+      width: 100%; min-width: 0; height: 32px; box-sizing: border-box; padding: 0 10px 0 29px; border-radius: 12px;
       border: 1px solid var(--wa-line-strong); background: var(--wa-field); color: var(--wa-ink); font: inherit; font-size: 12.5px;
       transition: border-color .12s ease-out, box-shadow .12s ease-out;
     }
@@ -693,7 +693,7 @@ export const formEntityStyles = css`
     .sym-bar > select.sym-set { flex: none; max-width: 46%; height: 32px; border-radius: 9px; font-size: 12.5px; }
     .sym-well {
       position: relative; max-height: 320px; overflow-y: auto; overscroll-behavior: contain;
-      padding: 8px; border-radius: 12px; border: 1px solid var(--wa-line);
+      padding: 8px; border-radius: 14px; border: 1px solid var(--wa-line);
       background: color-mix(in srgb, var(--wa-panel) 55%, transparent);
       box-shadow: inset 0 1px 2px color-mix(in srgb, #000 18%, transparent);
       scrollbar-width: thin; scrollbar-color: var(--wa-line-strong) transparent;

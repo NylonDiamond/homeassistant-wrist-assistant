@@ -1,4 +1,4 @@
-import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./chunks/chunk-ZGQ3GWAM.js";import{a as bv,b as yv,c as xv,d as kv}from"./chunks/chunk-TEOB5JBW.js";import{a as hl,b as ul,c as fl,e as gl,f as Dm}from"./chunks/chunk-KAAVVMWW.js";import{A as Tw,B as Cw,C as Ew,D as Rw,E as Pw,F as Lw,K as Al,L as wr,M as Iw,Q as Dw,a as lw,b as Ys,c as cw,d as de,e as Pl,f as pw,g as mr,h as hw,i as uw,j as Ll,k as Il,l as fw,m as re,n as ce,o as gw,p as mw,q as ww,r as vw,s as Dl,t as bw,u as yw,v as xw,w as Ol,x as kw,y as $w,z as Sw}from"./chunks/chunk-J4OKGUI3.js";import{a as aw,b as ow,c as dw}from"./chunks/chunk-WZXJOBHW.js";import{a as Mf}from"./chunks/chunk-MPMSUI3O.js";import{a as vd}from"./chunks/chunk-P7FG3CI7.js";import{a as qn,b as du,c as lu,d as cu,e as pu,f as hu}from"./chunks/chunk-P3IDVEZQ.js";import{A as ov,B as dv,C as lv,D as cv,E as ra,F as Ul,G as pv,H as hv,I as Kl,J as uv,K as fv,a as jw,b as Yw,c as Qw,e as Xw,f as Zw,g as Jw,j as ev,k as Ut,l as tv,m as iv,n as nv,o as rv,p as _l,q as ta,s as ia,t as sv,u as Nl,v as zl,w as Bl,x as Gl,y as na,z as av}from"./chunks/chunk-QPQK7NV3.js";import{Kb as Sm,X as xm,Y as km,Z as $m}from"./chunks/chunk-GGWFE73C.js";import"./chunks/chunk-Z6J4KIFF.js";import{M as sw,a as ou,b as Wm,c as Cl,d as jm,e as js,f as Ym,g as Qm,h as Xm,i as El,j as Zm,m as Rl,n as Jm,o as ew,p as tw,q as iw,x as nw,y as rw}from"./chunks/chunk-WYVZXJD7.js";import{e as Cm,i as Em}from"./chunks/chunk-OPGHIDN6.js";import{a as Ks,b as Vs,c as xl,d as kl,e as $l,f as Sl,g as Um,h as gr,i as qs,j as Ws,k as Km,l as Vm,m as Tl,n as qm}from"./chunks/chunk-2ALVOBEH.js";import"./chunks/chunk-OIMRRBL5.js";import"./chunks/chunk-YPXTMZX7.js";import{a as ol,b as cr,c as bm}from"./chunks/chunk-H5CXQ2W6.js";import{e as ym}from"./chunks/chunk-6SB6XCX5.js";import"./chunks/chunk-ORTKNHDH.js";import"./chunks/chunk-NXBMAU2L.js";import{j as Ff,k as Xn,l as Hf,m as cd,n as pd,o as _f,p as hd,q as ud,r as Nf,s as ks,t as zf,u as Bf,v as Gf,w as Uf,x as fd}from"./chunks/chunk-LT625GQL.js";import"./chunks/chunk-YLF7MTFH.js";import{a as wd}from"./chunks/chunk-ANKVRJTP.js";import"./chunks/chunk-BGKKDBPO.js";import"./chunks/chunk-R2ZXRPSJ.js";import"./chunks/chunk-MTUTXLNK.js";import{a as uu,b as fu,c as gu,d as bi,e as mu,f as wu,g as vu,h as bu,i as ps,j as yu,k as xu,l as ku}from"./chunks/chunk-RPXG2HBN.js";import{$ as Ue,$a as _g,$b as sl,A as ir,Aa as Eg,Ab as Zd,B as kd,Ba as Hd,Bb as Ns,C as Cs,Ca as Rg,Cb as dr,D as Es,Da as Pg,Db as Jd,E as wt,Ea as Lg,F as hg,Fa as zt,G as ug,Ga as Hs,H as $d,Ha as rr,Hb as el,I as fg,Ia as sr,Ib as Ti,J as Rs,Ja as _d,K as Sd,Ka as Si,L as gg,La as Nd,M as mg,Ma as zd,N as wg,O as Td,Oa as Bd,P as vg,Pa as ar,Pb as He,Q as vt,Qa as Ig,Qb as tl,R as nr,Ra as Dg,Rb as Xg,S as J,Sa as Gd,Sb as Zg,T as Cd,Ta as cn,Tb as Jg,U as Ps,Ua as Ud,Ub as em,V as Ed,Va as Og,Vb as tm,Wa as Ag,Wb as il,X as bg,Xa as Mg,Xb as nl,Y as yg,Ya as Kd,Yb as im,Z as Rd,Za as Fg,Zb as nm,_ as Pd,_a as Hg,_b as rl,a as Jn,aa as Nt,ab as Ng,ac as rm,b as Zf,ba as Ls,bb as Vd,bc as sm,ca as Ke,cb as qd,cc as am,d as Jf,da as Ld,db as zg,dc as rt,e as yd,ea as ye,eb as Bg,ec as Ci,f as $s,fa as Id,fb as Wd,fc as Ze,g as Ss,ga as xg,gb as Gg,gc as om,h as xd,ha as Is,hb as Ug,hc as dm,i as eg,ia as Ds,ib as Kg,ic as zs,j as tg,ja as kg,jb as Vg,jc as lm,ka as Dd,kc as cm,l as ig,la as ne,lb as or,lc as pm,m as Ts,ma as Od,mb as qg,mc as hm,n as er,na as Ad,nb as jd,nc as xe,o as ng,oa as $g,ob as Wg,oc as um,p as tr,pa as Sg,pb as jg,pc as fm,q as rg,qa as Os,qb as Yd,qc as gm,r as sg,ra as Tg,rb as Qd,rc as mm,s as ag,sa as Cg,sb as Xd,sc as Bs,t as og,ta as Md,tc as Gs,u as dn,ua as bt,v as dg,va as ln,vb as _s,w as lg,wa as As,x as Ie,xa as Ms,y as cg,ya as Fs,yb as Yg,z as pg,za as Fd,zb as Qg}from"./chunks/chunk-F5QPMGCO.js";import{$ as si,Aa as pe,B as ur,Ba as un,C as ml,Ca as Js,D as Am,Da as Bw,E as wl,Ea as ct,G as Mm,Ga as fn,H as Fm,Ha as di,I as Hm,Ia as Gw,Ja as Gt,K as vl,Ka as gn,M as Us,Ma as li,N as _m,Na as Uw,O as Nm,Oa as Kw,P as bl,Pa as Fl,Q as zm,Qa as Hl,Ra as Vw,Sa as qw,T as Bm,Ta as ea,Ua as Ww,V as fr,W as yl,Y as Gm,Z as Ei,_ as Ml,aa as pn,ba as Qs,c as Xf,ca as Ve,d as wm,da as Xs,ea as Ow,f as lr,fa as Aw,g as al,h as vm,ha as Mw,ia as Fw,j as dl,ja as De,l as pr,la as Hw,m as ll,ma as ai,n as Tm,na as st,oa as Zs,p as cl,pa as oi,qa as Ee,r as hr,ra as _w,s as Rm,t as Pm,ta as Nw,u as pl,ua as qe,v as Lm,va as hn,w as Im,wa as Ri,xa as vr,ya as Bt,z as Om,za as zw}from"./chunks/chunk-FBE7QSA3.js";import{j as nt,k as Kf,l as gd,m as md,n as $i}from"./chunks/chunk-ZEGVU3YJ.js";import{c as Tf,d as Cf,i as Vf,k as qf}from"./chunks/chunk-HJ546BM7.js";import"./chunks/chunk-QVNRXMEY.js";import{d as Af}from"./chunks/chunk-V6F4RSJC.js";import"./chunks/chunk-BZA4I5PG.js";import"./chunks/chunk-HOTMV2GM.js";import{b as Wf,c as jf}from"./chunks/chunk-FUJM2RUP.js";import{c as Yf,e as Zn,f as bd,g as Qf}from"./chunks/chunk-E25RCHMU.js";import{a as ld,b as Ef,c as Rf,d as Pf,e as Lf,f as If,g as Df,h as Of}from"./chunks/chunk-VIYTJFZK.js";import{$e as Jr,$f as Fh,Ad as rh,Ae as fh,Ag as Xh,Be as Le,Bf as Io,Bg as Zh,Ce as So,Cg as Ht,Dd as it,De as gh,Df as Ph,Dg as Jh,Ee as To,Ef as Qi,Eg as Ho,Fe as mh,Ff as Xi,He as wh,Ja as Up,Je as Bn,Ke as vh,Kg as eu,Le as bh,Lg as tu,Me as Co,Mg as iu,Nc as Wp,Ne as yh,Od as sh,Oe as xh,Of as Do,Pe as kh,Pf as Kn,Qf as Oo,Rf as Ao,Tb as Vp,Tc as ft,Tf as Lh,Uf as mt,Vf as Ih,We as $h,Wf as Dh,Xb as _n,Xf as ts,Ye as Zr,Ze as Ct,Zf as Mo,_ as qr,_c as Wr,_e as Eo,_f as Mh,ae as ah,af as Gn,ag as Fo,ah as nu,b as Mn,bg as Hh,bh as _o,c as y,cc as qp,cd as jp,ce as Qr,cf as Sh,cg as _h,ch as Vn,d as Ur,df as Ro,dg as is,e as Dp,ed as Yp,ee as oh,ef as Th,eg as en,f as Op,fe as dh,fg as Nh,fh as ru,g as Ap,ge as zn,gf as ji,gg as zh,gh as su,h as Mp,hd as Qp,he as lh,hf as es,hg as Bh,hh as au,i as Fp,id as Xp,ie as gt,if as Ch,ig as Gh,ih as ls,j as yo,jd as Ce,jf as Yi,jg as Uh,jh as vi,k as Hp,kd as Tt,ke as ch,kg as ns,kh as cs,l as Kr,ld as jr,lf as Un,lg as rs,lh as tn,m as _p,md as Zp,me as Xt,mg as Kh,mh as b,n as Np,nd as Nn,nf as Po,nh as Su,o as zp,od as Yr,oe as Qe,og as Fe,oh as No,pd as Jp,pe as Zt,pf as Eh,pg as Ft,ph as Tu,q as dt,qd as eh,qe as Wi,qg as ss,qh as Cu,r as wi,rd as th,re as Xr,rg as Vh,rh as ie,s as At,sd as ih,sg as as,t as Vr,td as nh,te as ph,tf as Jt,tg as os,u as Bp,ue as ko,ug as qh,v as Gp,vg as Wh,w as St,wf as Rh,wg as jh,xb as Fn,xe as $o,xg as Yh,yb as Hn,ye as hh,yg as ds,zb as Kp,zd as xo,ze as uh,zf as Lo,zg as Qh}from"./chunks/chunk-WT56CXTV.js";import{$ as Go,$b as dd,Aa as ni,Ab as td,Ba as Wu,Bb as cf,Ca as _t,Cb as pf,Da as fs,Db as id,Ea as ju,Eb as hf,Fa as jn,Fb as uf,Ga as xi,Gb as ws,Ha as Yu,Hb as nd,Ia as Uo,Ib as rd,Jb as ff,K as Wn,Ka as ki,Kb as gf,L as Pu,Lb as vs,M as W,Ma as Yn,Mb as Et,N as F,Na as Ko,Nb as bs,O as Lu,Ob as sd,Pa as Vo,Pb as Qn,Q as hs,Qa as gs,Qb as ad,R as Bo,Rb as ys,S as Iu,Sb as od,Tb as mf,Ua as qo,Ub as wf,Vb as vf,Wb as bf,X as Du,Xa as Qu,Xb as yf,Y as Ou,Ya as Xu,Yb as xf,Z as ii,Zb as kf,_ as sn,_b as $f,a as Zi,b as Y,ba as Au,bc as Sf,cc as xs,d as Xe,da as Mu,db as on,dc as ri,e as ei,ea as Fu,eb as Zu,f as Ji,fa as Hu,fb as Wo,g as Oh,ga as _u,gb as Ju,h as Ah,ha as Nu,hb as ef,i as be,ia as zu,ib as tf,ja as Bu,jb as nf,k as Mt,ka as yi,kb as jo,l as I,la as Gu,m as oe,ma as us,mb as rf,n as lt,na as an,nb as Yo,o as $u,p as V,pb as Qo,qb as sf,ra as Uu,rb as ms,s as Eu,sb as af,ta as Ku,tb as Xo,u as nn,ub as of,v as Ru,vb as Zo,w as rn,wa as Vu,wb as df,x as zo,xa as qu,xb as Jo,y as ti,yb as lf,zb as ed}from"./chunks/chunk-HPMCDO65.js";import"./chunks/chunk-CLMBAHSL.js";import{a as Ye,b as N,f as c,g as k,i as u,k as Gr,l as Ip}from"./chunks/chunk-6ZDBXU6B.js";import{a as v}from"./chunks/chunk-LO2NM3CE.js";var aa=class{constructor(r){this.timers=[];this.durationMs=0;this.opts=r}now(){return(this.opts.now??(()=>Date.now()))()}setTimer(r,e){return(this.opts.setTimer??((t,i)=>setTimeout(t,i)))(r,e)}clearTimer(r){(this.opts.clearTimer??(e=>clearTimeout(e)))(r)}get playing(){return this.timers.length>0}get startInstant(){return this.playing?this.startedAt:void 0}get lengthMs(){return this.playing?this.durationMs:0}play(r){this.stop();let e=this.now(),t=Zp(r,e);if(t.length!==0){this.startedAt=e,this.durationMs=jr(r)*1e3,this.opts.show(t[0].page);for(let i=1;i<t.length;i++){let n=t[i],a=i===t.length-1;this.timers.push(this.setTimer(()=>{this.opts.show(n.page),a&&(this.timers=[],this.startedAt=void 0,this.opts.done?.())},n.atMs-e))}}}stop(){for(let r of this.timers)this.clearTimer(r);this.timers=[],this.startedAt=void 0}};var $v,Wl=!1;function B0(){return $v??=import("./chunks/shared-tab-YRFS2OVW.js").then(()=>{},s=>{throw Wl=!0,s}),$v}function Sv(s){let r=customElements.get("wa-shared-tab")!==void 0;return!r&&!Wl&&B0().then(s.onLoaded,s.onLoaded),r?c`<wa-shared-tab .hass=${s.hass} .owners=${s.owners} .hrefOf=${s.hrefOf} .onOpen=${s.onOpen}></wa-shared-tab>`:c`<div class="ap-loading">${Wl?"The Shared tab did not load. Reload the page to try again.":"Loading\u2026"}</div>`}function G0(s){let o=[],d=98,l=!1;for(let p of s){if(p==="small"){if(l){o.push({x:48,y:d,w:34,h:34}),d+=38,l=!1;continue}if(d+34>170)break;o.push({x:10,y:d,w:34,h:34}),l=!0;continue}l&&(d+=38,l=!1);let h=p==="large"?72:34;if(d+h>170)break;o.push({x:10,y:d,w:72,h}),d+=h+4}return o}var Tv=[48,26,60];function Cv(s){return s.replace(/[^A-Za-z0-9_-]/g,"_")}function Ev(s,r,e,t,i){let n=i.focus?.diameter??Math.max(i.width,i.height),a=2*t/n,o=i.focus?.cx??i.width/2,d=i.focus?.cy??i.height/2;return k`<clipPath id=${s}><circle cx=${r} cy=${e} r=${t}></circle></clipPath>
+import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./chunks/chunk-YF735WJS.js";import{a as bv,b as yv,c as xv,d as kv}from"./chunks/chunk-H73AKADM.js";import{a as hl,b as ul,c as fl,e as gl,f as Dm}from"./chunks/chunk-KAAVVMWW.js";import{A as Tw,B as Cw,C as Ew,D as Rw,E as Pw,F as Lw,K as Al,L as wr,M as Iw,Q as Dw,a as lw,b as Ys,c as cw,d as de,e as Pl,f as pw,g as mr,h as hw,i as uw,j as Ll,k as Il,l as fw,m as re,n as ce,o as gw,p as mw,q as ww,r as vw,s as Dl,t as bw,u as yw,v as xw,w as Ol,x as kw,y as $w,z as Sw}from"./chunks/chunk-RDOTTQOQ.js";import{a as aw,b as ow,c as dw}from"./chunks/chunk-W2TMKM7H.js";import{a as Mf}from"./chunks/chunk-MPMSUI3O.js";import{a as vd}from"./chunks/chunk-P7FG3CI7.js";import{a as qn,b as du,c as lu,d as cu,e as pu,f as hu}from"./chunks/chunk-DGTIHCLK.js";import{A as ov,B as dv,C as lv,D as cv,E as ra,F as Ul,G as pv,H as hv,I as Kl,J as uv,K as fv,a as jw,b as Yw,c as Qw,e as Xw,f as Zw,g as Jw,j as ev,k as Ut,l as tv,m as iv,n as nv,o as rv,p as _l,q as ta,s as ia,t as sv,u as Nl,v as zl,w as Bl,x as Gl,y as na,z as av}from"./chunks/chunk-W2L7YRFQ.js";import{Kb as Sm,X as xm,Y as km,Z as $m}from"./chunks/chunk-A3JPFXFX.js";import"./chunks/chunk-Z6J4KIFF.js";import{M as sw,a as ou,b as Wm,c as Cl,d as jm,e as js,f as Ym,g as Qm,h as Xm,i as El,j as Zm,m as Rl,n as Jm,o as ew,p as tw,q as iw,x as nw,y as rw}from"./chunks/chunk-EGJAK7CL.js";import{e as Cm,i as Em}from"./chunks/chunk-IBCG72RJ.js";import{a as Ks,b as Vs,c as xl,d as kl,e as $l,f as Sl,g as Um,h as gr,i as qs,j as Ws,k as Km,l as Vm,m as Tl,n as qm}from"./chunks/chunk-KRFXNZED.js";import"./chunks/chunk-OIMRRBL5.js";import"./chunks/chunk-YPXTMZX7.js";import{a as ol,b as cr,c as bm}from"./chunks/chunk-H5CXQ2W6.js";import{e as ym}from"./chunks/chunk-6SB6XCX5.js";import"./chunks/chunk-ORTKNHDH.js";import"./chunks/chunk-NXBMAU2L.js";import{j as Ff,k as Xn,l as Hf,m as cd,n as pd,o as _f,p as hd,q as ud,r as Nf,s as ks,t as zf,u as Bf,v as Gf,w as Uf,x as fd}from"./chunks/chunk-OOCW3T7A.js";import"./chunks/chunk-YLF7MTFH.js";import{a as wd}from"./chunks/chunk-SH2OU3KQ.js";import"./chunks/chunk-BGKKDBPO.js";import"./chunks/chunk-R2ZXRPSJ.js";import"./chunks/chunk-MTUTXLNK.js";import{a as uu,b as fu,c as gu,d as bi,e as mu,f as wu,g as vu,h as bu,i as ps,j as yu,k as xu,l as ku}from"./chunks/chunk-RPXG2HBN.js";import{$ as Ue,$a as _g,$b as sl,A as ir,Aa as Eg,Ab as Zd,B as kd,Ba as Hd,Bb as Ns,C as Cs,Ca as Rg,Cb as dr,D as Es,Da as Pg,Db as Jd,E as wt,Ea as Lg,F as hg,Fa as zt,G as ug,Ga as Hs,H as $d,Ha as rr,Hb as el,I as fg,Ia as sr,Ib as Ti,J as Rs,Ja as _d,K as Sd,Ka as Si,L as gg,La as Nd,M as mg,Ma as zd,N as wg,O as Td,Oa as Bd,P as vg,Pa as ar,Pb as He,Q as vt,Qa as Ig,Qb as tl,R as nr,Ra as Dg,Rb as Xg,S as J,Sa as Gd,Sb as Zg,T as Cd,Ta as cn,Tb as Jg,U as Ps,Ua as Ud,Ub as em,V as Ed,Va as Og,Vb as tm,Wa as Ag,Wb as il,X as bg,Xa as Mg,Xb as nl,Y as yg,Ya as Kd,Yb as im,Z as Rd,Za as Fg,Zb as nm,_ as Pd,_a as Hg,_b as rl,a as Jn,aa as Nt,ab as Ng,ac as rm,b as Zf,ba as Ls,bb as Vd,bc as sm,ca as Ke,cb as qd,cc as am,d as Jf,da as Ld,db as zg,dc as rt,e as yd,ea as ye,eb as Bg,ec as Ci,f as $s,fa as Id,fb as Wd,fc as Ze,g as Ss,ga as xg,gb as Gg,gc as om,h as xd,ha as Is,hb as Ug,hc as dm,i as eg,ia as Ds,ib as Kg,ic as zs,j as tg,ja as kg,jb as Vg,jc as lm,ka as Dd,kc as cm,l as ig,la as ne,lb as or,lc as pm,m as Ts,ma as Od,mb as qg,mc as hm,n as er,na as Ad,nb as jd,nc as xe,o as ng,oa as $g,ob as Wg,oc as um,p as tr,pa as Sg,pb as jg,pc as fm,q as rg,qa as Os,qb as Yd,qc as gm,r as sg,ra as Tg,rb as Qd,rc as mm,s as ag,sa as Cg,sb as Xd,sc as Bs,t as og,ta as Md,tc as Gs,u as dn,ua as bt,v as dg,va as ln,vb as _s,w as lg,wa as As,x as Ie,xa as Ms,y as cg,ya as Fs,yb as Yg,z as pg,za as Fd,zb as Qg}from"./chunks/chunk-34OSEGK3.js";import{$ as si,Aa as pe,B as ur,Ba as un,C as ml,Ca as Js,D as Am,Da as Bw,E as wl,Ea as ct,G as Mm,Ga as fn,H as Fm,Ha as di,I as Hm,Ia as Gw,Ja as Gt,K as vl,Ka as gn,M as Us,Ma as li,N as _m,Na as Uw,O as Nm,Oa as Kw,P as bl,Pa as Fl,Q as zm,Qa as Hl,Ra as Vw,Sa as qw,T as Bm,Ta as ea,Ua as Ww,V as fr,W as yl,Y as Gm,Z as Ei,_ as Ml,aa as pn,ba as Qs,c as Xf,ca as Ve,d as wm,da as Xs,ea as Ow,f as lr,fa as Aw,g as al,h as vm,ha as Mw,ia as Fw,j as dl,ja as De,l as pr,la as Hw,m as ll,ma as ai,n as Tm,na as st,oa as Zs,p as cl,pa as oi,qa as Ee,r as hr,ra as _w,s as Rm,t as Pm,ta as Nw,u as pl,ua as qe,v as Lm,va as hn,w as Im,wa as Ri,xa as vr,ya as Bt,z as Om,za as zw}from"./chunks/chunk-V34EVKPM.js";import{j as nt,k as Kf,l as gd,m as md,n as $i}from"./chunks/chunk-ZEGVU3YJ.js";import{c as Tf,d as Cf,i as Vf,k as qf}from"./chunks/chunk-7WWU3XFA.js";import"./chunks/chunk-QVNRXMEY.js";import{d as Af}from"./chunks/chunk-V6F4RSJC.js";import"./chunks/chunk-BZA4I5PG.js";import"./chunks/chunk-HOTMV2GM.js";import{b as Wf,c as jf}from"./chunks/chunk-FUJM2RUP.js";import{c as Yf,e as Zn,f as bd,g as Qf}from"./chunks/chunk-NENKM4JD.js";import{a as ld,b as Ef,c as Rf,d as Pf,e as Lf,f as If,g as Df,h as Of}from"./chunks/chunk-SGN6OSSH.js";import{$e as Jr,$f as Fh,Ad as rh,Ae as fh,Ag as Xh,Be as Le,Bf as Io,Bg as Zh,Ce as So,Cg as Ht,Dd as it,De as gh,Df as Ph,Dg as Jh,Ee as To,Ef as Qi,Eg as Ho,Fe as mh,Ff as Xi,He as wh,Ja as Up,Je as Bn,Ke as vh,Kg as eu,Le as bh,Lg as tu,Me as Co,Mg as iu,Nc as Wp,Ne as yh,Od as sh,Oe as xh,Of as Do,Pe as kh,Pf as Kn,Qf as Oo,Rf as Ao,Tb as Vp,Tc as ft,Tf as Lh,Uf as mt,Vf as Ih,We as $h,Wf as Dh,Xb as _n,Xf as ts,Ye as Zr,Ze as Ct,Zf as Mo,_ as qr,_c as Wr,_e as Eo,_f as Mh,ae as ah,af as Gn,ag as Fo,ah as nu,b as Mn,bg as Hh,bh as _o,c as y,cc as qp,cd as jp,ce as Qr,cf as Sh,cg as _h,ch as Vn,d as Ur,df as Ro,dg as is,e as Dp,ed as Yp,ee as oh,ef as Th,eg as en,f as Op,fe as dh,fg as Nh,fh as ru,g as Ap,ge as zn,gf as ji,gg as zh,gh as su,h as Mp,hd as Qp,he as lh,hf as es,hg as Bh,hh as au,i as Fp,id as Xp,ie as gt,if as Ch,ig as Gh,ih as ls,j as yo,jd as Ce,jf as Yi,jg as Uh,jh as vi,k as Hp,kd as Tt,ke as ch,kg as ns,kh as cs,l as Kr,ld as jr,lf as Un,lg as rs,lh as tn,m as _p,md as Zp,me as Xt,mg as Kh,mh as b,n as Np,nd as Nn,nf as Po,nh as Su,o as zp,od as Yr,oe as Qe,og as Fe,oh as No,pd as Jp,pe as Zt,pf as Eh,pg as Ft,ph as Tu,q as dt,qd as eh,qe as Wi,qg as ss,qh as Cu,r as wi,rd as th,re as Xr,rg as Vh,rh as ie,s as At,sd as ih,sg as as,t as Vr,td as nh,te as ph,tf as Jt,tg as os,u as Bp,ue as ko,ug as qh,v as Gp,vg as Wh,w as St,wf as Rh,wg as jh,xb as Fn,xe as $o,xg as Yh,yb as Hn,ye as hh,yg as ds,zb as Kp,zd as xo,ze as uh,zf as Lo,zg as Qh}from"./chunks/chunk-CTEDCA76.js";import{$ as Go,$b as dd,Aa as ni,Ab as td,Ba as Wu,Bb as cf,Ca as _t,Cb as pf,Da as fs,Db as id,Ea as ju,Eb as hf,Fa as jn,Fb as uf,Ga as xi,Gb as ws,Ha as Yu,Hb as nd,Ia as Uo,Ib as rd,Jb as ff,K as Wn,Ka as ki,Kb as gf,L as Pu,Lb as vs,M as W,Ma as Yn,Mb as Et,N as F,Na as Ko,Nb as bs,O as Lu,Ob as sd,Pa as Vo,Pb as Qn,Q as hs,Qa as gs,Qb as ad,R as Bo,Rb as ys,S as Iu,Sb as od,Tb as mf,Ua as qo,Ub as wf,Vb as vf,Wb as bf,X as Du,Xa as Qu,Xb as yf,Y as Ou,Ya as Xu,Yb as xf,Z as ii,Zb as kf,_ as sn,_b as $f,a as Zi,b as Y,ba as Au,bc as Sf,cc as xs,d as Xe,da as Mu,db as on,dc as ri,e as ei,ea as Fu,eb as Zu,f as Ji,fa as Hu,fb as Wo,g as Oh,ga as _u,gb as Ju,h as Ah,ha as Nu,hb as ef,i as be,ia as zu,ib as tf,ja as Bu,jb as nf,k as Mt,ka as yi,kb as jo,l as I,la as Gu,m as oe,ma as us,mb as rf,n as lt,na as an,nb as Yo,o as $u,p as V,pb as Qo,qb as sf,ra as Uu,rb as ms,s as Eu,sb as af,ta as Ku,tb as Xo,u as nn,ub as of,v as Ru,vb as Zo,w as rn,wa as Vu,wb as df,x as zo,xa as qu,xb as Jo,y as ti,yb as lf,zb as ed}from"./chunks/chunk-HPMCDO65.js";import"./chunks/chunk-CLMBAHSL.js";import{a as Ye,b as N,f as c,g as k,i as u,k as Gr,l as Ip}from"./chunks/chunk-6ZDBXU6B.js";import{a as v}from"./chunks/chunk-LO2NM3CE.js";var aa=class{constructor(r){this.timers=[];this.durationMs=0;this.opts=r}now(){return(this.opts.now??(()=>Date.now()))()}setTimer(r,e){return(this.opts.setTimer??((t,i)=>setTimeout(t,i)))(r,e)}clearTimer(r){(this.opts.clearTimer??(e=>clearTimeout(e)))(r)}get playing(){return this.timers.length>0}get startInstant(){return this.playing?this.startedAt:void 0}get lengthMs(){return this.playing?this.durationMs:0}play(r){this.stop();let e=this.now(),t=Zp(r,e);if(t.length!==0){this.startedAt=e,this.durationMs=jr(r)*1e3,this.opts.show(t[0].page);for(let i=1;i<t.length;i++){let n=t[i],a=i===t.length-1;this.timers.push(this.setTimer(()=>{this.opts.show(n.page),a&&(this.timers=[],this.startedAt=void 0,this.opts.done?.())},n.atMs-e))}}}stop(){for(let r of this.timers)this.clearTimer(r);this.timers=[],this.startedAt=void 0}};var $v,Wl=!1;function B0(){return $v??=import("./chunks/shared-tab-KETJBZGM.js").then(()=>{},s=>{throw Wl=!0,s}),$v}function Sv(s){let r=customElements.get("wa-shared-tab")!==void 0;return!r&&!Wl&&B0().then(s.onLoaded,s.onLoaded),r?c`<wa-shared-tab .hass=${s.hass} .owners=${s.owners} .hrefOf=${s.hrefOf} .onOpen=${s.onOpen}></wa-shared-tab>`:c`<div class="ap-loading">${Wl?"The Shared tab did not load. Reload the page to try again.":"Loading\u2026"}</div>`}function G0(s){let o=[],d=98,l=!1;for(let p of s){if(p==="small"){if(l){o.push({x:48,y:d,w:34,h:34}),d+=38,l=!1;continue}if(d+34>170)break;o.push({x:10,y:d,w:34,h:34}),l=!0;continue}l&&(d+=38,l=!1);let h=p==="large"?72:34;if(d+h>170)break;o.push({x:10,y:d,w:72,h}),d+=h+4}return o}var Tv=[48,26,60];function Cv(s){return s.replace(/[^A-Za-z0-9_-]/g,"_")}function Ev(s,r,e,t,i){let n=i.focus?.diameter??Math.max(i.width,i.height),a=2*t/n,o=i.focus?.cx??i.width/2,d=i.focus?.cy??i.height/2;return k`<clipPath id=${s}><circle cx=${r} cy=${e} r=${t}></circle></clipPath>
     <image href=${i.url} x=${r-o*a} y=${e-d*a} width=${i.width*a} height=${i.height*a}
       preserveAspectRatio="none" clip-path=${`url(#${s})`}></image>`}function jl(s,r,e,t,i,n){return k`<clipPath id=${s}><rect x=${r} y=${e} width=${t} height=${i} rx="5"></rect></clipPath>
     <image href=${n.url} x=${r} y=${e} width=${t} height=${i} preserveAspectRatio="xMidYMid meet" clip-path=${`url(#${s})`}></image>`}function Yl(s,r,e,t){let i=`ha-w-${Cv(s)}`,n=(d,l)=>{let p=t?.circles[l];return p?Ev(`${i}-c${l}`,d,124,12,p):l<r?k`<circle cx=${d} cy="124" r="11" stroke="#242427" stroke-width="3"></circle>
@@ -167,7 +167,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
   .hs-sec > .hs-more { align-self: flex-start; }
   .hs-guides { display: flex; flex-direction: column; gap: 8px; }
   a.hs-guide {
-    display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 8px; text-decoration: none; font-size: 13px;
+    display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 10px; text-decoration: none; font-size: 13px;
     color: var(--wa-ink); border: 1px solid var(--wa-line-strong); background: color-mix(in srgb, var(--wa-ink) 3%, var(--wa-card));
   }
   a.hs-guide:hover { background: var(--wa-hover); }
@@ -348,7 +348,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     border: 1px solid var(--wa-line-strong); box-shadow: var(--wa-shadow-card, none); border-radius: 16px; background: var(--wa-card);
   }
   .dev-addr-slot legend { padding: 0 4px; margin-left: -4px; font-size: 13px; font-weight: 500; color: var(--wa-ink); }
-  .dev-addr-modes { display: inline-flex; align-self: flex-start; border: 1px solid var(--wa-line-strong); border-radius: 8px; overflow: hidden; }
+  .dev-addr-modes { display: inline-flex; align-self: flex-start; border: 1px solid var(--wa-line-strong); border-radius: 10px; overflow: hidden; }
   .dev-addr-mode { position: relative; display: inline-flex; align-items: center; padding: 4px 12px; font-size: 12.5px; color: var(--wa-muted); cursor: pointer; }
   .dev-addr-mode + .dev-addr-mode { border-left: 1px solid var(--wa-line-strong); }
   .dev-addr-mode input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
@@ -361,7 +361,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
   .dev-addr a:hover { text-decoration: underline; }
 `;var l1=16,c1=/mdi:[a-z0-9]+(?:-[a-z0-9]+)*(?![-a-z0-9])/g;function Tc(s,r,e=new Set){let t=s.kind;if(t.kind==="literal"){let i=t.value.trim();return i.startsWith(Jn)?[i]:[]}if(t.kind==="jinja")return t.value.match(c1)??[];if(t.kind==="named"){let i=t.id.toUpperCase();if(e.has(i))return[];e.add(i);let n=r.find(a=>a.id.toUpperCase()===i);return n?Tc(n.value,r,e):[]}return[]}function Bb(s,r,e){let t=[];s.icon&&t.push(...Tc(s.icon,e));for(let i of r){if(i.partId!==s.id)continue;let n=[...i.cases.flatMap(a=>a.then),...i.otherwise??[]];for(let a of n)a.kind==="setIcon"&&a.value&&t.push(...Tc(a.value,e))}return[...new Set(t)]}function Cc(s,r){for(let e of s)e.kind==="text"?r(e):e.kind==="list"&&Cc(e.payload.template,r)}function Ec(s,r){let e=!1;return Cc(s.elements,t=>{for(let i of t.payload.parts??[]){let n=i.iconPaths??{},a={};if(i.icon!==void 0)for(let d of Bb(i,t.payload.rules,s.values)){if(Object.keys(a).length>=l1)break;let l=r(d)??n[d];l!==void 0&&l!==""&&(a[d]=l)}Object.keys(a).length===Object.keys(n).length&&Object.entries(a).every(([d,l])=>n[d]===l)||(e=!0,Object.keys(a).length>0?i.iconPaths=a:delete i.iconPaths)}}),e}function Gb(s){let r=!1;return Cc(s.elements,e=>{for(let t of e.payload.parts??[])t.icon!==void 0&&Bb(t,e.payload.rules,s.values).length>0&&(r=!0)}),r}var p1=100;function Rc(s,r){let e=s.supportedFamilies.length;return e>=2?`This complication has ${e} shapes, and a complication is one shape now. Split it into one complication per shape to edit it.`:s.name.trim()===""?"Give it a name first.":u1(s,r)}function h1(s){switch(s.kind){case"named":return s.id.trim()===""?"a shared value":void 0;case"chartStat":return s.layer.trim()===""?"a chart":void 0;case"listStat":return s.layer.trim()===""?"a list":void 0;case"imageTime":return s.layer.trim()===""?"a picture":void 0;default:return}}function u1(s,r){let e;return Jt(s,(t,i)=>{if(e!==void 0)return;let n=h1(t.kind);if(n===void 0)return;let a=!i.layerName&&i.layerId!==void 0?r?.(i.layerId):void 0,o=a?{...i,layerName:a}:i;e=`${Eh(o)} reads ${n} that is not chosen. Choose one, or pick another source.`}),e}var _e=class s{constructor(r,e){this.config=r;this.testValues=new Map;this.past=[];this.future=[];this.coalesceUntil=0;this.held=!1;this.heldStepTaken=!1;this.baseRevision=e,Un(r),Gn(r),ah(r),Rd(r),Pd(r),this.baseline=JSON.stringify(Qr(r))}static fromDocument(r,e){return new s(it(r),e)}get dirty(){return JSON.stringify(Qr(this.config))!==this.baseline}get canUndo(){return this.past.length>0}get canRedo(){return this.future.length>0}update(r,e,t){this.takeStep(e);let i=structuredClone(this.config);r(i),Un(i,t),Gn(i),Rd(i),Pd(i),s.mdiPath&&Ec(i,s.mdiPath),this.config=i}refreshIconPaths(){return s.mdiPath?Ec(this.config,s.mdiPath):!1}setTestValues(r,e){this.takeStep(e),this.testValues=r}takeStep(r){let e=Date.now();(this.held?this.heldStepTaken:r!==void 0&&r===this.coalesceKey&&e<this.coalesceUntil)||(this.past.push({config:structuredClone(this.config),testValues:this.testValues}),this.past.length>p1&&this.past.shift(),this.future=[]),this.heldStepTaken=this.held,this.coalesceKey=r,this.coalesceUntil=r===void 0?0:e+800}markDirty(){this.baseline=""}beginGesture(){this.endGesture(),this.held=!0}endGesture(){this.coalesceKey=void 0,this.coalesceUntil=0,this.held=!1,this.heldStepTaken=!1}undo(){let r=this.past.pop();r&&(this.future.push({config:this.config,testValues:this.testValues}),this.config=r.config,this.testValues=r.testValues,this.endGesture())}redo(){let r=this.future.pop();r&&(this.past.push({config:this.config,testValues:this.testValues}),this.config=r.config,this.testValues=r.testValues,this.endGesture())}encoded(){let r=structuredClone(this.config);return r.dataSources=Mo(r),Qr(r)}commit(r,e){let t=structuredClone(this.config);t.dataSources=Mo(t);let i=new s(t,r);return e!==void 0&&(i.baseline=JSON.stringify(e)),i.past=this.past,i.future=this.future,i.testValues=this.testValues,i}};var Ub=512,Kb={version:"2.8.0",build:11};function Er(s){if(F(s)==="library")return!0;let r=Bo(ei(s)),e=Bo(Kb.version);if(!r||!e)return!1;let t=Iu(r,e);if(t!==0)return t>0;let i=Number.parseInt(String(s?.app_build??""),10);return Number.isFinite(i)&&i>=Kb.build}function qb(s,r){return Lc(s)<2||Er(r)?void 0:`Update the ${F(r)==="iphone"?be("iphone",Y(r)):"watch"} app to edit this complication.`}function Lc(s){return ne(s).length+(s.control===void 0?0:1)}function Wb(s){return Lc(s)>1}function f1(s,r){let e=`wa-split-link:${s}|${r}`,t=Do(e).padStart(16,"0")+Do(`${e}#2`).padStart(16,"0"),i=(8+(Number.parseInt(t[16],16)&3)).toString(16);return[t.slice(0,8),t.slice(8,12),`4${t.slice(13,16)}`,`${i}${t.slice(17,20)}`,t.slice(20,32)].join("-").toUpperCase()}function g1(s){return Wb(s)?"split":"none"}function m1(s,r=Le,e){let t=w1(s),i=ne(t),n=[],a=Wb(t),o=l=>a&&t.linkId!==void 0?f1(t.linkId,l):void 0,d=(l,p)=>{let h=o(p);h!==void 0?l.linkId=h:a&&delete l.linkId};for(let l of i){let p=v1(Os(t,[l]),l);d(p,l),delete p.control,a&&delete p.legacyControlEntityId,p.id=n.length===0&&t.control===void 0?s.id:r(),p.schemaVersion=St(p),n.push(p)}if(t.control!==void 0){let l=structuredClone(t);d(l,"control");for(let p of i)Sg(l,p);l.elements=[],l.perFamily={},delete l.groups,l.id=s.id,a&&e!==void 0&&(l.slotIndex=e),l.schemaVersion=St(l),n.push(l)}if(n.length===0){let l=structuredClone(t);l.schemaVersion=St(l),n.push(l)}return n}function w1(s){let r=structuredClone(s);return Un(r),Gn(r),r}function v1(s,r){for(let e of dt)e!==r&&delete s.perFamily[e];return s}function b1(s){let r=s.length;return`Split ${r} complication${r===1?"":"s"} into one per shape: ${s.join(", ")}.`}function Pc(s,r){return`Not split, ${s}: ${r}`}function Ic(s){return String(s?.message??s)}async function y1(s,r,e){try{let t=await ss(s,r,e.id);return t.complication_id.toUpperCase()!==e.id.toUpperCase()?"the server answered about another complication":t.revision!==e.revision?"it changed on the server while the panel was reading it":void 0}catch(t){return`its save history could not be read (${Ic(t)})`}}function x1(s){let r=new Set;for(let e of s){let t=e.deleted?void 0:e.document?.slotIndex;typeof t=="number"&&r.add(t)}return r}function k1(s,r){return new _e(structuredClone(s),r).encoded()}function $1(s){let r=[];for(let e of s){if(e.deleted||!e.document)continue;let t;try{t=it(e.document)}catch{continue}g1(t)==="split"&&r.push({record:e,config:t})}return{split:r}}async function S1(s,r,e,t=Le,i=[]){let n=r.owner_watch_id,a=$1(e).split.map(g=>({...g,plan:"split"}));if(a.length===0)return{writes:[],split:[]};let o=r.device_name??n,l=e.filter(g=>!g.deleted).length+a.reduce((g,m)=>g+(Lc(m.config)-1),0);if(l>Ub)return{writes:[],split:[],problem:Pc(o,`it would end up with ${l} complications, past the ${Ub} one device can hold`)};for(let g of a){let m=await y1(s,n,g.record);if(m!==void 0)return{writes:[],split:[],problem:Pc(`${g.config.name} on ${o}`,m)}}let p=[],h=[],f=x1(e);for(let g of a){let m=g.config.control!==void 0&&ne(g.config).length>0?Bp(f,i):-1;m>=0&&f.add(m);let x=m1(g.config,t,m>=0?m:void 0),$=g.config.name,T=[...x.filter(E=>E.id===g.config.id),...x.filter(E=>E.id!==g.config.id)],C;for(let E of T){let S=E.id===g.config.id;try{let L=await Fe(s,n,k1(E,S?g.record.revision:null),S?g.record.revision:null);if(!L.ok||!L.record){C=L.message??L.error??"the save was refused";break}p.push({owner:n,id:E.id,name:$,kind:S?"parent":"child",...S?{previous:g.record.revision}:{},current:L.record.revision})}catch(L){C=Ic(L);break}}if(C!==void 0)return{writes:p,split:h,problem:Pc(`${$} on ${o}`,C)};h.push($)}return{writes:p,split:h}}async function T1(s,r){try{if(r.kind==="child"){let t=await Ft(s,r.owner,r.id,r.current);return t.ok?void 0:`${r.name}: ${t.message??t.error??"the delete was refused"}`}let e=await as(s,r.owner,r.id,r.previous??r.current,r.current);return e.ok?void 0:`${r.name}: ${e.message??e.error??"the restore was refused"}`}catch(e){return`${r.name}: ${Ic(e)}`}}var Vb="wa-split-shapes:";function C1(s){let r=globalThis.sessionStorage;try{if(r?.getItem(Vb+s)==="done")return!1;r?.setItem(Vb+s,"done")}catch{}return!0}async function jb(s,r,e){let t=[],i=[],n=[];for(let l of r){if(!Er(l)||!C1(l.owner_watch_id))continue;let p;try{p=await en(s,l.owner_watch_id)}catch{continue}let h=await S1(s,l,p.records,Le,p.occupied??p.presets??[]);t=[...t,...h.writes],i.push(...h.split),h.problem!==void 0&&n.push(h.problem)}if(i.length===0&&n.length===0)return;let a=l=>[...l,...n],o=[];i.length>0&&o.push(b1(i));let d=()=>{e({lines:a(o),undo:d,busy:!0}),(async()=>{let l=[],p=[...t].sort((h,f)=>h.kind===f.kind?0:h.kind==="child"?-1:1);for(let h of p){let f=await T1(s,h);f!==void 0&&l.push(f)}t=[],e({lines:a([l.length===0?"Undone. Those complications are back the way they were.":`Undone, except: ${l.join("; ")}.`]),busy:!1})})()};e({lines:a(o),busy:!1,...t.length>0?{undo:d}:{}})}var Yb="d77ed917810a";var Qb="11fa18406cea";var Xb="8bff7b3f65bb";var Ca=class{constructor(r,e="symbol-sizes.json.gz",t=Xb){this.onReady=r;this.file=e;this.digest=t;this.sizes=new Map;this.state="idle"}get(r){return this.load(),this.sizes.get(r.trim())}fill(r){if(!(r===null||typeof r!="object")){for(let[e,t]of Object.entries(r))if(Array.isArray(t)&&typeof t[0]=="number"&&typeof t[1]=="number"&&t[0]>0&&t[1]>0){let i=t,n=i.length>=8&&i.slice(2,8).every(a=>typeof a=="number")&&i[4]>=0&&i[6]>0&&i[7]>0?{imageWidth:i[2],imageHeight:i[3],x:i[4],y:i[5],width:i[6],height:i[7]}:void 0;this.sizes.set(e,{aspect:i[0],extent:i[1],...n===void 0?{}:{ink:n}})}this.state="loaded"}}load(){if(this.state!=="idle")return;if(this.state="loading",typeof fetch!="function"||typeof DecompressionStream>"u"){this.state="loaded";return}let r=new URL(`${this.file}?v=${this.digest}`,import.meta.url);fetch(r).then(e=>{if(!e.ok||!e.body)throw new Error(`${this.file}: ${e.status}`);return new Response(e.body.pipeThrough(new DecompressionStream("gzip"))).json()}).then(e=>this.fill(e)).catch(()=>{}).finally(()=>{this.state="loaded",this.onReady()})}};var ey="border-radius: 0";function E1(s){return s.trim().replace(/\./g,"-")}function R1(s){return s.trim().replace(/-/g,".")}var Ea=class s{constructor(r){this.onReady=r;this.cache=new Map;this.pending=new Set;this.nameList=[];this.nameState="idle"}static available(){return typeof window<"u"&&!!window.customIcons?.ios}available(){return s.available()}names(){return this.nameState==="idle"&&this.fetchNames(),this.nameState==="loaded"?this.nameList:void 0}fetchNames(){this.nameState="loading";let r=window.customIcons?.ios;if(!r||typeof r.getIconList!="function"){this.nameState="loaded";return}Promise.resolve().then(()=>r.getIconList()).then(e=>{this.nameList=(e??[]).map(t=>R1(t.name)).sort()}).catch(()=>{this.nameList=[]}).finally(()=>{this.nameState="loaded",this.onReady()})}render(r,e,t){let i=E1(r),n=this.cache.get(i);if(n===void 0){this.fetch(i);return}if(n===null||!n.path)return;let a=Sd(t)??{color:"#FFFFFF",opacity:1},o=n.viewBox??"0 0 24 24";return k`<svg x="0" y="0" width=${e} height=${e} viewBox=${o} style=${ey}>
       <path d=${n.path} fill=${a.color} fill-opacity=${a.opacity} /></svg>`}fetch(r){if(this.pending.has(r))return;let e=window.customIcons?.ios;if(!e){this.cache.set(r,null);return}this.pending.add(r),Promise.resolve().then(()=>e.getIcon(r)).then(t=>this.cache.set(r,t&&t.path?{...t,path:ty(t.path)}:null)).catch(()=>this.cache.set(r,null)).finally(()=>{this.pending.delete(r),this.onReady()})}},P1=.015,Zb=/[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?/y,Jb={m:2,l:2,t:2,h:1,v:1,c:6,s:4,q:4,a:7,z:0};function ty(s){let r=[],e=0,t=0,i=0,n=0,a=0,o="",d=()=>{for(;e<s.length&&/[\s,]/.test(s[e]);)e++},l=()=>{d(),Zb.lastIndex=e;let g=Zb.exec(s);if(!g)return;let m=e;return e+=g[0].length,{value:Number(g[0]),start:m,end:e}},p=()=>{d();let g=s[e];if(!(g!=="0"&&g!=="1"))return e++,g==="1"?1:0};for(;d(),!(e>=s.length);){let g=s[e];if(/[A-Za-z]/.test(g)){if(!Object.hasOwn(Jb,g.toLowerCase()))return s;if(o=g,e++,g==="z"||g==="Z"){t=n,i=a;continue}}else if(o===""||o==="z"||o==="Z")return s;let m=o.toLowerCase(),x=o===m,$=x?t:0,T=x?i:0;if(m==="a"){let S=l(),L=l(),R=l(),D=p(),O=p(),X=l(),$e=l();if(!S||!L||!R||D===void 0||O===void 0||!X||!$e)return s;let le=$+X.value,ee=T+$e.value,Z=Math.abs(S.value),he=Math.abs(L.value);if(Z>0&&he>0){let ue=R.value*Math.PI/180,fe=(t-le)/2,Be=(i-ee)/2,Se=Math.cos(ue)*fe+Math.sin(ue)*Be,ge=-Math.sin(ue)*fe+Math.cos(ue)*Be,ot=Math.sqrt(Se*Se/(Z*Z)+ge*ge/(he*he));if(ot<1&&(1-ot)*Math.max(Z,he)<=P1){let ut=A=>String(Math.floor(A*ot*1e4)/1e4);r.push({start:S.start,end:L.end,text:` ${ut(Z)} ${ut(he)} `})}}t=le,i=ee;continue}let C=Jb[m],E=[];for(let S=0;S<C;S++){let L=l();if(!L)return s;E.push(L.value)}m==="h"?t=$+E[0]:m==="v"?i=T+E[0]:(t=$+E[C-2],i=T+E[C-1]),m==="m"&&(n=t,a=i,o=x?"l":"L")}if(r.length===0)return s;let h="",f=0;for(let g of r)h+=s.slice(f,g.start)+g.text,f=g.end;return h+s.slice(f)}var Ra=class{constructor(r,e="symbol-icons.json.gz",t=Yb){this.onReady=r;this.file=e;this.digest=t;this.icons=new Map;this.drawn=new Map;this.state="idle"}path(r){return this.load(),this.icons.get(r.trim())?.[0]}available(){return this.state!=="loaded"||this.icons.size>0}names(){return this.load(),this.state==="loaded"?[...this.icons.keys()].sort():void 0}render(r,e,t){this.load();let i=r.trim(),n=this.icons.get(i);if(!n)return;let a=this.drawn.get(i);a===void 0&&(a=ty(n[0]),this.drawn.set(i,a));let o=Sd(t)??{color:"#FFFFFF",opacity:1};return k`<svg x="0" y="0" width=${e} height=${e} viewBox=${n[1]} style=${ey}>
-      <path d=${a} fill=${o.color} fill-opacity=${o.opacity} /></svg>`}loaded(){return this.load(),this.loading??Promise.resolve()}load(){if(this.state!=="idle")return;this.state="loading";let r=new URL(`${this.file}?v=${this.digest}`,import.meta.url);this.loading=fetch(r).then(e=>{if(!e.ok||!e.body)throw new Error(`${this.file}: ${e.status}`);return new Response(e.body.pipeThrough(new DecompressionStream("gzip"))).json()}).then(e=>{if(e&&typeof e=="object")for(let[t,i]of Object.entries(e))Array.isArray(i)&&typeof i[0]=="string"&&typeof i[1]=="string"&&this.icons.set(t,[i[0],i[1]])}).catch(()=>{}).finally(()=>{this.state="loaded",this.onReady()})}},Dc=class{constructor(r,e){this.sf=r;this.mdi=new Ra(e,"mdi-icons.json.gz",Qb),this.sizes=new Ca(e)}imageSize(r){return r.trim().startsWith(Jn)?void 0:this.sizes.get(r)}render(r,e,t){return(r.trim().startsWith(Jn)?this.mdi:this.sf).render(r,e,t)}available(){return this.sf.available()}names(){return this.sf.names()}mdiNames(){return this.mdi.names()}mdiPath(r){return this.mdi.path(r)}mdiLoaded(){return this.mdi.loaded()}};function iy(s){let r=Ea.available()?new Ea(s):new Ra(s);return new Dc(r,s)}function ny(s){let r=new Map,e=new Set;return{size(t){let i=r.get(t);if(i)return i;if(e.has(t))return;e.add(t);let n=new Image;n.onload=()=>{n.naturalWidth<=0||n.naturalHeight<=0||(r.set(t,{width:n.naturalWidth,height:n.naturalHeight}),s())},n.src=t}}}var Pa=class{constructor(){this.watched=new Map;this.onScroll=r=>this.mark(r.currentTarget);this.observer=new ResizeObserver(()=>{for(let r of this.watched.keys())this.mark(r)})}refresh(r){let e=new Set(r.filter(t=>t!=null));for(let[t,i]of[...this.watched])e.has(t)||this.drop(t,i);for(let t of e){let i=this.watched.get(t);i||(i=new Set,this.watched.set(t,i),t.addEventListener("scroll",this.onScroll,{passive:!0}),this.observer.observe(t));for(let n of i)n.parentElement!==t&&(this.observer.unobserve(n),i.delete(n));for(let n of t.children)i.has(n)||(i.add(n),this.observer.observe(n));this.mark(t)}}disconnect(){for(let[r,e]of[...this.watched])this.drop(r,e);this.observer.disconnect()}drop(r,e){r.removeEventListener("scroll",this.onScroll),this.observer.unobserve(r);for(let t of e)this.observer.unobserve(t);this.watched.delete(r)}mark(r){let e=r.scrollHeight-r.clientHeight,t=e>1;r.toggleAttribute("data-more-above",t&&r.scrollTop>1),r.toggleAttribute("data-more-below",t&&r.scrollTop<e-1)}};var ry,Oc=!1;function L1(){return ry??=import("./chunks/home-lineup-GCGS3F7X.js").then(()=>{},s=>{throw Oc=!0,s}),ry}function sy(s){let r=customElements.get("wa-home-lineup")!==void 0;return!r&&!Oc&&L1().then(s.onLoaded,s.onLoaded),r?c`<wa-home-lineup .hass=${s.hass} .ownerId=${s.ownerId} .deviceName=${s.deviceName} .kind=${s.kind} .platform=${s.platform} .phones=${s.phones}
+      <path d=${a} fill=${o.color} fill-opacity=${o.opacity} /></svg>`}loaded(){return this.load(),this.loading??Promise.resolve()}load(){if(this.state!=="idle")return;this.state="loading";let r=new URL(`${this.file}?v=${this.digest}`,import.meta.url);this.loading=fetch(r).then(e=>{if(!e.ok||!e.body)throw new Error(`${this.file}: ${e.status}`);return new Response(e.body.pipeThrough(new DecompressionStream("gzip"))).json()}).then(e=>{if(e&&typeof e=="object")for(let[t,i]of Object.entries(e))Array.isArray(i)&&typeof i[0]=="string"&&typeof i[1]=="string"&&this.icons.set(t,[i[0],i[1]])}).catch(()=>{}).finally(()=>{this.state="loaded",this.onReady()})}},Dc=class{constructor(r,e){this.sf=r;this.mdi=new Ra(e,"mdi-icons.json.gz",Qb),this.sizes=new Ca(e)}imageSize(r){return r.trim().startsWith(Jn)?void 0:this.sizes.get(r)}render(r,e,t){return(r.trim().startsWith(Jn)?this.mdi:this.sf).render(r,e,t)}available(){return this.sf.available()}names(){return this.sf.names()}mdiNames(){return this.mdi.names()}mdiPath(r){return this.mdi.path(r)}mdiLoaded(){return this.mdi.loaded()}};function iy(s){let r=Ea.available()?new Ea(s):new Ra(s);return new Dc(r,s)}function ny(s){let r=new Map,e=new Set;return{size(t){let i=r.get(t);if(i)return i;if(e.has(t))return;e.add(t);let n=new Image;n.onload=()=>{n.naturalWidth<=0||n.naturalHeight<=0||(r.set(t,{width:n.naturalWidth,height:n.naturalHeight}),s())},n.src=t}}}var Pa=class{constructor(){this.watched=new Map;this.onScroll=r=>this.mark(r.currentTarget);this.observer=new ResizeObserver(()=>{for(let r of this.watched.keys())this.mark(r)})}refresh(r){let e=new Set(r.filter(t=>t!=null));for(let[t,i]of[...this.watched])e.has(t)||this.drop(t,i);for(let t of e){let i=this.watched.get(t);i||(i=new Set,this.watched.set(t,i),t.addEventListener("scroll",this.onScroll,{passive:!0}),this.observer.observe(t));for(let n of i)n.parentElement!==t&&(this.observer.unobserve(n),i.delete(n));for(let n of t.children)i.has(n)||(i.add(n),this.observer.observe(n));this.mark(t)}}disconnect(){for(let[r,e]of[...this.watched])this.drop(r,e);this.observer.disconnect()}drop(r,e){r.removeEventListener("scroll",this.onScroll),this.observer.unobserve(r);for(let t of e)this.observer.unobserve(t);this.watched.delete(r)}mark(r){let e=r.scrollHeight-r.clientHeight,t=e>1;r.toggleAttribute("data-more-above",t&&r.scrollTop>1),r.toggleAttribute("data-more-below",t&&r.scrollTop<e-1)}};var ry,Oc=!1;function L1(){return ry??=import("./chunks/home-lineup-VM3WB7US.js").then(()=>{},s=>{throw Oc=!0,s}),ry}function sy(s){let r=customElements.get("wa-home-lineup")!==void 0;return!r&&!Oc&&L1().then(s.onLoaded,s.onLoaded),r?c`<wa-home-lineup .hass=${s.hass} .ownerId=${s.ownerId} .deviceName=${s.deviceName} .kind=${s.kind} .platform=${s.platform} .phones=${s.phones}
     .waitsForIphone=${s.waitsForIphone} .phoneMoves=${s.phoneMoves} .seedWaits=${s.seedWaits} .seedMayLand=${s.seedMayLand} .asksFirst=${s.asksFirst} .appVersion=${s.appVersion} .icons=${s.icons} .iconsTick=${s.iconsTick} .onEdit=${s.onEdit} .onChange=${s.onChange}></wa-home-lineup>`:c`<p class="hl-empty">${Oc?"This part of the page did not load. Reload the page to try again.":"Loading\u2026"}</p>`}var La=["face","lock","home","control","other"],oy={face:"Watch face",lock:"Lock Screen",home:"Home Screen",control:"Control Center",other:"Not ready to place"},dy={face:"On a watch face. A design on no device can go on an iPhone's Lock Screen too.",lock:"On an iPhone's Lock Screen.",get home(){return I("On an iPhone's Home Screen.","On a phone's Home Screen.")},get control(){return I("A control in Control Center, on a watch or an iPhone.","A control in Control Center on an Apple Watch or an iPhone, and a Quick Settings tile on an Android phone.")},other:"These have no shape yet, or were made in the old iPhone app and have not moved to Home Assistant yet."},I1=["small","medium","large","xlarge"],D1=["rectangular","circular","inline"],ay=["rectangular","circular","corner","inline","small","medium","large","xlarge"];function Ac(s,r,e){return r===void 0?e?"control":"other":I1.includes(r)?"home":s==="iphone"&&D1.includes(r)?"lock":"face"}function ly(s,r){let e=n=>{let a=n===void 0?-1:ay.indexOf(n);return a<0?ay.length:a},t=s.name.toLocaleLowerCase(),i=r.name.toLocaleLowerCase();return e(s.family)-e(r.family)||(t<i?-1:t>i?1:0)}function cy(s){let r=s.deviceName;if(!s.listed)return{on:!1,grey:!0,dash:s.designKind==="iphone"?`${I("An iPhone","A phone")} widget. To have it on ${r}, open it and use Duplicate as.`:`A watch complication. To have it on ${r}, open it and use Duplicate as.`,title:""};if(s.on)return{on:!0,next:!1,title:s.last?`Take off ${r}. It stays in your list, under ${s.shelfName}.`:`Take off ${r}. A face or widget already using it keeps it.`};if(!s.draws)return s.tooOld!==void 0?{on:!1,dash:s.tooOld,title:""}:{on:!1,dash:`${r} does not draw this shape.`,title:""};if(s.full){let t=s.android===!0?"":" Presets made in the iPhone app count too.";return{on:!1,title:`${r} is full for this shape.${t} Delete a complication on it first.`,note:"full",noteWarn:!0}}return{on:!1,next:!0,title:s.deviceKind==="iphone"&&s.designKind==="library"&&s.lockShape?`Put on ${r}'s Lock Screen`:`Put on ${r}`}}function py(s){if(s.iphoneGrey&&s.watchGrey)return I("Watch designs cannot go on an iPhone, nor iPhone designs on a watch.","Watch designs cannot go on a phone, nor phone designs on a watch.");if(s.iphoneGrey)return I("Watch designs cannot go on an iPhone.","Watch designs cannot go on a phone.");if(s.watchGrey)return I("iPhone designs cannot go on a watch.","Phone designs cannot go on a watch.")}function Sn(s,r){return s==="iphone"?r===1?"widget":"widgets":r===1?"complication":"complications"}function hy(s,r){if(r!==0)return s==="watch"?`${r} ${I("iPhone","phone")} ${r===1?"widget is":"widgets are"} not listed: a watch cannot show ${r===1?"it":"them"}.`:`${r} watch ${r===1?"complication is":"complications are"} not listed: ${I("an iPhone","a phone")} cannot show ${r===1?"it":"them"}.`}var uy="wrist-assistant:complications-view";function fy(s){try{return s().getItem(uy)==="board"?"board":"cards"}catch{return"cards"}}function gy(s,r){try{s().setItem(uy,r)}catch{}}var my=N`
   /* The device heads stick right under the tab bar (\`.bd-pin\`), reaching
      back over the page's top padding as the Cards toolbar does, so on the
@@ -880,7 +880,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
   .ws-cert .ws-cert-pass input[type=password] {
     width: 100%; min-width: 0; box-sizing: border-box; height: 28px; min-height: 28px; padding: 0 9px;
     font: inherit; font-size: 13px; font-weight: 500; color: var(--wa-ink);
-    border: 1px solid var(--wa-line-strong); border-radius: 6px; background-color: var(--wa-field);
+    border: 1px solid var(--wa-line-strong); border-radius: 8px; background-color: var(--wa-field);
     transition: border-color .12s ease-out, box-shadow .12s ease-out;
   }
   .ws-cert .ws-cert-pass input[type=password]:hover:not(:disabled) { border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); }
@@ -1047,7 +1047,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
   .pair-next-title { margin: 4px 0 -4px; font-size: 11px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; color: var(--wa-ink); }
   .pair-next-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
   .pair-next-steps li {
-    display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; padding: 12px 14px; border-radius: 12px;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; padding: 12px 14px; border-radius: 14px;
     border: 1px solid var(--wa-line-strong); background: var(--wa-card);
   }
   .pair-next-steps li.first { border-color: color-mix(in srgb, var(--wa-green) 45%, var(--wa-line-strong)); }
@@ -1092,7 +1092,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
   .ws-pair-choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); gap: 12px; }
   .ws-pair button.ws-pair-choice {
     display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-height: 148px; box-sizing: border-box; padding: 16px;
-    border-radius: 12px; border: 1px solid var(--wa-line-strong); background: var(--wa-card); color: var(--wa-ink);
+    border-radius: 14px; border: 1px solid var(--wa-line-strong); background: var(--wa-card); color: var(--wa-ink);
     font: inherit; text-align: left; cursor: pointer; transition: border-color .12s ease-out, background-color .12s ease-out;
   }
   .ws-pair button.ws-pair-choice:hover { border-color: var(--wa-green); background: var(--wa-hover); }
@@ -1112,11 +1112,11 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
   .ws-pair button.small.ws-go:hover:not(:disabled) { border-color: var(--wa-green); background: var(--wa-hover); }
   .ws-pair-foot button.small.ws-go { min-height: 32px; padding: 0 14px; border-radius: 999px; }
   .ws-pair-found {
-    display: flex; align-items: center; gap: 14px; padding: 14px; margin-bottom: 8px; border-radius: 12px;
+    display: flex; align-items: center; gap: 14px; padding: 14px; margin-bottom: 8px; border-radius: 14px;
     border: 1px solid var(--wa-line-strong); background: color-mix(in srgb, var(--wa-bg) 45%, var(--wa-card));
   }
   .ws-pair-found-art {
-    flex: none; width: 48px; height: 56px; box-sizing: border-box; border-radius: 12px; display: grid; place-items: center;
+    flex: none; width: 48px; height: 56px; box-sizing: border-box; border-radius: 14px; display: grid; place-items: center;
     border: 1px solid var(--wa-line-strong); color: var(--wa-muted);
   }
   .ws-pair-found-art svg.ui-icon { width: 26px; height: 26px; }
@@ -1350,7 +1350,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
      hairline), with the info mark in the accent. */
   .ws-top > .ws-new {
     display: flex; align-items: center; gap: 10px; box-sizing: border-box; width: min(1088px, calc(100% - 32px)); margin: 10px auto 0;
-    padding: 10px 14px; border: 1px solid var(--wa-line); border-radius: 8px; background: var(--wa-panel); font-size: 13px;
+    padding: 10px 14px; border: 1px solid var(--wa-line); border-radius: 10px; background: var(--wa-panel); font-size: 13px;
   }
   .ws-top > .ws-new > svg.ui-icon { width: 16px; height: 16px; flex: none; color: var(--wa-accent); }
   .ws-top > .ws-new > span { flex: 1; min-width: 0; }
@@ -1380,7 +1380,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
   .ws-nav { flex: 0 0 248px; min-width: 0; display: flex; flex-direction: column; gap: 10px; position: sticky; top: 64px; }
   .ws-search {
     display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 10px; box-sizing: border-box;
-    border: 1px solid var(--wa-line-strong); border-radius: 8px; background: var(--wa-field); color: var(--wa-muted);
+    border: 1px solid var(--wa-line-strong); border-radius: 10px; background: var(--wa-field); color: var(--wa-muted);
   }
   .ws-search:focus-within { border-color: color-mix(in srgb, var(--wa-ink) 45%, var(--wa-line-strong)); }
   .ws-search svg { width: 15px; height: 15px; flex: none; }
@@ -1484,7 +1484,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
      hue. Five at most to a line, three on a narrow column. */
   .ws-tiles {
     display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); gap: 1px; margin: 8px 0 0 36px;
-    border: 1px solid var(--wa-line-strong); border-radius: 8px; overflow: hidden; background: var(--wa-line-strong);
+    border: 1px solid var(--wa-line-strong); border-radius: 12px; overflow: hidden; background: var(--wa-line-strong);
   }
   @container xfer (max-width: 440px) {
     .ws-tiles { grid-template-columns: repeat(var(--cols-narrow, 3), minmax(0, 1fr)); margin-left: 0; }
@@ -1538,7 +1538,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
      the form under them at the row's full width. */
   .ws-addr-row > .ws-addr-t { grid-column: 2 / -1; grid-row: 1; color: var(--wa-ink); font-size: 13.5px; font-weight: 500; }
   .ws-addr-row > .ws-addr-body { grid-column: 2 / -1; grid-row: 3; margin-top: 8px; }
-  .ws-addr-row > .ws-addr-body > .addr-sum { padding: 8px 8px 8px 12px; border: 1px solid var(--wa-line); border-radius: 10px; background: var(--wa-field); }
+  .ws-addr-row > .ws-addr-body > .addr-sum { padding: 8px 8px 8px 12px; border: 1px solid var(--wa-line); border-radius: 12px; background: var(--wa-field); }
   @container xfer (max-width: 440px) {
     .ws-addr-row > .ws-addr-body { grid-column: 1 / -1; }
   }
@@ -1615,7 +1615,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
      tab; it never takes the pointer, so the tab under it stays hovered. */
   .wa-wr-tip {
     position: fixed; inset: auto; margin: 0; box-sizing: border-box; width: 360px; max-width: calc(100vw - 16px);
-    padding: 12px 14px; border: 1px solid var(--wa-line-strong); border-radius: 12px;
+    padding: 12px 14px; border: 1px solid var(--wa-line-strong); border-radius: 14px;
     background: var(--wa-card); color: var(--wa-ink); box-shadow: var(--wa-shadow-pop); pointer-events: none;
   }
   .wa-wr-tip-what { margin: 0 0 10px; font-size: 13px; line-height: 1.45; color: var(--wa-label); }
@@ -1632,13 +1632,13 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
      it is and how its complications stand. */
   .wa-wr-watch, button.wa-wr-open {
     display: inline-flex; align-items: center; gap: 10px; min-height: 42px; max-width: 300px; box-sizing: border-box;
-    padding: 5px 12px 5px 6px; border-radius: 11px; text-align: left;
+    padding: 5px 12px 5px 6px; border-radius: 14px; text-align: left;
     font: inherit; color: var(--wa-ink); background: var(--wa-card); border: 1px solid var(--wa-line-strong);
   }
   .wa-wr-watch, .wa-wr-picker, button.wa-wr-pair { flex: none; min-width: 0; }
   .wa-wr-art {
     width: 30px; height: 30px; box-sizing: border-box; flex: none; display: grid; place-items: center;
-    border-radius: 8px; background: var(--wa-bg); border: 1px solid var(--wa-line);
+    border-radius: 10px; background: var(--wa-bg); border: 1px solid var(--wa-line);
   }
   .wa-wr-art svg.ha-mini { width: 16px; height: 21px; display: block; }
   .wa-wr-art .ha-lit { stroke: var(--c); }
@@ -1673,13 +1673,13 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
   .wa-wr-menu {
     position: absolute; left: 0; top: calc(100% + 6px); width: min(300px, calc(100vw - 24px)); box-sizing: border-box;
     display: flex; flex-direction: column; gap: 2px; padding: 6px;
-    background: var(--wa-card); border: 1px solid var(--wa-line-strong); border-radius: 10px;
+    background: var(--wa-card); border: 1px solid var(--wa-line-strong); border-radius: 12px;
     box-shadow: var(--wa-shadow-pop); z-index: 2;
   }
   .wa-wr-menu-h { padding: 6px 8px 4px; font-size: 11px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: var(--wa-muted); }
   button.wa-wr-row {
     display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 10px; box-sizing: border-box;
-    border-radius: 6px; font: inherit; font-size: 13px; text-align: left; cursor: pointer;
+    border-radius: 8px; font: inherit; font-size: 13px; text-align: left; cursor: pointer;
     color: var(--wa-ink); background: transparent; border: 1px solid var(--wa-line);
   }
   button.wa-wr-row:hover { background: var(--wa-hover); border-color: var(--wa-line-strong); }
@@ -1708,7 +1708,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
   .wa-ip-empty h2 { margin: 0; font-size: 18px; font-weight: 500; }
   .wa-ip-empty p { margin: 0; max-width: 440px; font-size: 13px; line-height: 1.45; color: var(--wa-muted); }
   span.wa-ip-empty-chip {
-    display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; box-sizing: border-box;
+    display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; box-sizing: border-box;
     color: var(--wa-muted); border: 1px solid var(--wa-line-strong);
   }
   span.wa-ip-empty-chip svg.ui-icon { width: 20px; height: 20px; }
@@ -2014,11 +2014,11 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
       --wa-shape-medium: #c2410c;
       --wa-shape-large: #a21caf;
       --wa-shape-xlarge: #4338ca;
-      --wa-r-sm: 7px;
-      --wa-r-md: 10px;
+      --wa-r-sm: 9px;
+      --wa-r-md: 14px;
       --wa-r-lg: 18px;
       /* The left column's cards and the Add sheet. */
-      --wa-lc-r: 10px;
+      --wa-lc-r: 14px;
       /* Two states the top bar's sync pill and the Pages card's note say in
          color: on the device, and not there yet. */
       --wa-green: #1f8a4c;
@@ -2225,7 +2225,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     .pk-card-crop svg svg.complication { width: auto; height: auto; max-width: none; max-height: none; border-radius: 0; overflow: visible; }
     .pk-search {
       display: flex; align-items: center; gap: 8px; flex: none; width: 260px; max-width: 45vw;
-      height: 28px; box-sizing: border-box; padding: 0 10px; border-radius: 6px; border: 1px solid var(--wa-line-strong); background: var(--wa-field);
+      height: 28px; box-sizing: border-box; padding: 0 10px; border-radius: 8px; border: 1px solid var(--wa-line-strong); background: var(--wa-field);
     }
     .pk-search:hover { border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); }
     .pk-search:focus-within { border-color: var(--wa-accent); box-shadow: var(--wa-ring); }
@@ -2312,7 +2312,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     /* The closed row the designs on no device fold into, after the real work. */
     .pk-fold {
       display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-height: 40px; box-sizing: border-box; margin: 14px 0 0; padding: 4px 8px 4px 4px;
-      border: 1px solid var(--wa-line); border-radius: 10px; background: var(--wa-card);
+      border: 1px solid var(--wa-line); border-radius: 12px; background: var(--wa-card);
     }
     .pk-fold + .pk-boxes { margin-top: 14px; }
     .pk-sec-note.lone + .pk-fold { margin-top: 0; }
@@ -2338,7 +2338,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     .pk-card.blank .pk-card-top { margin-bottom: 6px; }
     .pk-card-slot {
       display: flex; align-items: center; justify-content: center; min-height: 34px; box-sizing: border-box; padding: 4px 8px;
-      border: 1.5px dashed var(--wa-line-strong); border-radius: 6px; font-size: 11.5px; color: var(--wa-muted); text-align: center;
+      border: 1.5px dashed var(--wa-line-strong); border-radius: 8px; font-size: 11.5px; color: var(--wa-muted); text-align: center;
     }
     .pk-box-where {
       display: inline-flex; align-items: center; gap: 5px; margin-left: 4px; padding: 1px 7px 1px 5px; border-radius: 999px;
@@ -2350,7 +2350,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     /* A grey chip with the device's glyph, outlined and tinted in its
        device's color (\`--dc\`); Unassigned has none and stays grey. */
     .pk-sec-glyph {
-      display: inline-grid; place-items: center; flex: none; width: 20px; height: 20px; box-sizing: border-box; border-radius: 6px;
+      display: inline-grid; place-items: center; flex: none; width: 20px; height: 20px; box-sizing: border-box; border-radius: 8px;
       background: var(--wa-hover); color: var(--dc, var(--wa-ink));
       border: 1px solid color-mix(in srgb, var(--dc, var(--wa-line-strong)) 60%, transparent);
     }
@@ -2419,7 +2419,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
        tick box is what "this one, and this one" looks like, so the picker's
        own boxes take their switch back off. */
     input.pk-card-pick, input.pk-box-pick {
-      width: 17px; height: 17px; border-radius: 5px;
+      width: 17px; height: 17px; border-radius: 7px;
       background: color-mix(in srgb, var(--wa-ink) 8%, transparent);
       box-shadow: inset 0 0 0 1.5px var(--wa-line-strong);
     }
@@ -2476,7 +2476,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     .pk-bar-list {
       position: absolute; top: calc(100% + 6px); right: 0; z-index: 6; min-width: 190px;
       display: flex; flex-direction: column; gap: 2px; padding: 6px;
-      border: 1px solid var(--wa-line); border-radius: 10px; background: var(--wa-card); box-shadow: 0 10px 30px rgba(0,0,0,.35);
+      border: 1px solid var(--wa-line); border-radius: 12px; background: var(--wa-card); box-shadow: 0 10px 30px rgba(0,0,0,.35);
     }
     .pk-bar-row {
       display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px; border: 0; border-radius: 7px;
@@ -2518,7 +2518,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     .pk-seg-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .pk-tag {
       flex: none; font-size: 10px; color: var(--wa-muted); cursor: help;
-      border: 1px solid var(--wa-line); border-radius: 6px; padding: 1px 6px;
+      border: 1px solid var(--wa-line); border-radius: 8px; padding: 1px 6px;
     }
     /* The picture is the card's button: one click on what you are looking at
        opens it. */
@@ -2593,7 +2593,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     .pk-dup-menu {
       position: absolute; top: 4px; left: 0; right: 0; z-index: 5; min-width: 220px;
       display: flex; flex-direction: column; gap: 4px; padding: 8px;
-      border: 1px solid var(--wa-line-strong); border-radius: 10px;
+      border: 1px solid var(--wa-line-strong); border-radius: 12px;
       background: var(--wa-card); box-shadow: var(--wa-shadow-pop);
     }
     /* A delete's toast with Undo (delete-later.ts), at the foot of every
@@ -2601,7 +2601,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     .wa-toast {
       position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 50;
       display: flex; align-items: center; gap: 12px; max-width: min(560px, calc(100vw - 32px));
-      padding: 8px 8px 8px 14px; border: 1px solid var(--wa-line-strong); border-radius: 10px;
+      padding: 8px 8px 8px 14px; border: 1px solid var(--wa-line-strong); border-radius: 12px;
       background: var(--wa-card); color: var(--wa-ink); box-shadow: var(--wa-shadow-pop); font-size: 13px;
     }
     .wa-toast.err { border-color: var(--error-color, #db4437); }
@@ -2611,7 +2611,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     .wa-toast > span.wa-toast-tick { flex: none; display: inline-flex; color: var(--wa-green); }
     .wa-toast-tick svg { width: 14px; height: 14px; }
     .wa-toast button {
-      flex: none; font: inherit; cursor: pointer; border-radius: 7px;
+      flex: none; font: inherit; cursor: pointer; border-radius: 9px;
       border: 1px solid var(--wa-line-strong); background: var(--wa-card); color: var(--wa-ink);
     }
     .wa-toast button:focus-visible { outline: none; box-shadow: var(--wa-ring); }
@@ -2621,7 +2621,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     .pk-dup-row {
       display: flex; align-items: center; gap: 7px; width: 100%; text-align: left; cursor: pointer;
       font: inherit; font-size: 12px; color: var(--wa-ink);
-      padding: 5px 7px; border: 1px solid var(--wa-line); border-radius: 7px; background: var(--wa-card);
+      padding: 5px 7px; border: 1px solid var(--wa-line); border-radius: 9px; background: var(--wa-card);
     }
     .pk-dup-row:hover:not([disabled]) { border-color: var(--wa-line-strong); }
     .pk-dup-row:focus-visible { outline: none; box-shadow: var(--wa-ring); }
@@ -2675,7 +2675,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     .pk-card-acts {
       position: absolute; top: 4px; right: 4px; z-index: 2;
       display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 2px; padding: 2px; max-width: calc(100% - 8px); box-sizing: border-box;
-      border: 1px solid var(--wa-line-strong); border-radius: 8px;
+      border: 1px solid var(--wa-line-strong); border-radius: 10px;
       background: color-mix(in srgb, var(--wa-card) 88%, transparent); backdrop-filter: blur(6px);
       opacity: 0; pointer-events: none; transition: opacity .12s ease-out;
     }
@@ -2769,7 +2769,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
        three questions and refuses until all three are answered. */
     dialog.new-dialog {
       width: min(720px, calc(100vw - 32px)); padding: 0;
-      border: 1px solid var(--wa-line); border-radius: 12px;
+      border: 1px solid var(--wa-line); border-radius: 14px;
       background: var(--wa-card); color: var(--wa-ink);
       box-shadow: 0 12px 40px rgba(0,0,0,.4);
     }
@@ -2844,7 +2844,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     /* A white card per section on the step's tint, so the sections are the
        shapes and the tint is the step. */
     .new-step .shape-row {
-      padding: 10px; border-radius: 10px; border: 1px solid var(--wa-line); background: var(--wa-card);
+      padding: 10px; border-radius: 12px; border: 1px solid var(--wa-line); background: var(--wa-card);
     }
     /* The running line sits opposite the buttons, so what is still missing, or
        what Create is about to make, is readable without hovering the button
@@ -2878,7 +2878,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
       position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer;
       width: 132px; box-sizing: border-box; text-align: center;
       font: inherit; font-size: 12px; padding: 10px 8px 8px; color: var(--wa-muted);
-      border: 1px solid var(--wa-line); border-radius: 10px; background: var(--wa-raised);
+      border: 1px solid var(--wa-line); border-radius: 12px; background: var(--wa-raised);
       transition: border-color .12s ease-out, background-color .12s ease-out, color .12s ease-out;
     }
     .kind-card:hover { border-color: var(--wa-line-strong); color: var(--wa-ink); }
@@ -2893,12 +2893,12 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
        boxes: it belongs to nobody, and it is the answer the step opens on. */
     .unassigned-row {
       display: flex; padding: 8px; margin-bottom: 8px;
-      border-radius: 11px; background: var(--wa-panel); box-shadow: inset 0 0 0 1px var(--wa-line);
+      border-radius: 14px; background: var(--wa-panel); box-shadow: inset 0 0 0 1px var(--wa-line);
     }
     .unassigned-row .dev-tick { flex: 1; }
     .person-box {
       display: flex; flex-direction: column; gap: 4px; padding: 8px;
-      border-radius: 11px; background: var(--wa-panel); box-shadow: inset 0 0 0 1px var(--wa-line);
+      border-radius: 14px; background: var(--wa-panel); box-shadow: inset 0 0 0 1px var(--wa-line);
     }
     .person-name { font-size: 12px; font-weight: 700; color: var(--wa-ink); padding: 0 2px 2px; }
     .dev-tick {
@@ -2926,7 +2926,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
       /* Room above the art for the tick, which otherwise sits on the drawing
          when a card draws two devices side by side. */
       font: inherit; font-size: 11px; padding: 22px 4px 6px; color: var(--wa-muted);
-      border: 1px solid var(--wa-line); border-radius: 10px; background: var(--wa-raised);
+      border: 1px solid var(--wa-line); border-radius: 12px; background: var(--wa-raised);
       transition: border-color .12s ease-out, background-color .12s ease-out, color .12s ease-out;
     }
     .shape-card:hover:not([disabled]) { border-color: var(--wa-line-strong); color: var(--wa-ink); }
@@ -3063,7 +3063,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     .xf-main { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
     .xf-main > input[type=text] { width: 100%; box-sizing: border-box; }
     .xf-uses { display: flex; flex-wrap: wrap; gap: 6px; }
-    .xf-use { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; font-size: 12px; padding: 2px 8px 2px 2px; border-radius: 7px; border: 1px solid var(--wa-line); background: var(--wa-raised); }
+    .xf-use { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; font-size: 12px; padding: 2px 8px 2px 2px; border-radius: 9px; border: 1px solid var(--wa-line); background: var(--wa-raised); }
     .xf-use .xf-lt { width: 34px; height: 20px; flex: none; border-radius: 4px; overflow: hidden; background: #000; line-height: 0; }
     .xf-use .xf-lt svg { display: block; }
     .xf-use .xf-ln { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -3086,7 +3086,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     .xf-act:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .xf-act b { font-weight: 600; font-size: 13px; }
     .xf-act > span:last-child { font-size: 12px; color: var(--wa-muted); }
-    .xf-act .ic { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; background: var(--wa-field); }
+    .xf-act .ic { width: 30px; height: 30px; border-radius: 10px; display: grid; place-items: center; background: var(--wa-field); }
     .xf-act .ic svg.ui-icon { width: 16px; height: 16px; }
     .xf-act.main { background: var(--wa-sel-bg); border-color: var(--wa-sel-ring); }
     .xf-act.main .ic { background: var(--wa-primary-bg); color: var(--wa-primary-ink); }
@@ -3182,7 +3182,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     .xf-pub .pn-tree { --kc: #4a90e2; }
     .xf-pub .pn-tree .pn-b { grid-template-columns: minmax(0, 1fr); gap: 2px; }
     .xf-pub .tr { display: flex; align-items: center; gap: 6px; min-width: 0; }
-    .xf-pub .tg { display: grid; gap: 2px; padding: 2px; border-radius: 10px;
+    .xf-pub .tg { display: grid; gap: 2px; padding: 2px; border-radius: 12px;
       background: color-mix(in srgb, var(--kc) 5%, transparent); border: 1px solid color-mix(in srgb, var(--kc) 24%, var(--wa-line)); }
     .xf-pub .tg.open { padding-bottom: 6px; }
     .xf-pub .tg-b { display: grid; gap: 2px; padding: 0 4px 0 18px; }
@@ -3214,7 +3214,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     .xf-shapes .pk-chip { display: inline-flex; align-items: center; gap: 4px; }
     .xf-shapes .pk-chip svg.ui-icon { width: 12px; height: 12px; }
     .xf-pub input[type=text] { width: 100%; box-sizing: border-box; background: var(--wa-card); }
-    .xf-pill { font-size: 12px; padding: 5px 8px; border-radius: 6px; background: var(--wa-card); border: 1px solid var(--wa-line); overflow-wrap: anywhere; white-space: pre-wrap; }
+    .xf-pill { font-size: 12px; padding: 5px 8px; border-radius: 8px; background: var(--wa-card); border: 1px solid var(--wa-line); overflow-wrap: anywhere; white-space: pre-wrap; }
     .xf-pill.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
     .xf-checks { display: grid; gap: 6px; }
     .xf-checks > div { display: flex; align-items: center; gap: 8px; font-size: 13px; }
@@ -3247,7 +3247,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     button.hs-row:hover { background: var(--wa-raised); }
     button.hs-row.on { background: var(--wa-sel-bg); }
     button.hs-row:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    .hs-rev { display: grid; place-items: center; width: 30px; height: 24px; border-radius: 7px; font-size: 12px; font-weight: 650; font-variant-numeric: tabular-nums; background: var(--wa-field); color: var(--wa-muted); }
+    .hs-rev { display: grid; place-items: center; width: 30px; height: 24px; border-radius: 9px; font-size: 12px; font-weight: 650; font-variant-numeric: tabular-nums; background: var(--wa-field); color: var(--wa-muted); }
     button.hs-row.on .hs-rev { background: var(--wa-accent); color: var(--wa-accent-ink); }
     /* Import: one dashed drop area until something is loaded. */
     .xf-drop { display: grid; justify-items: center; gap: 10px; padding: 28px 16px; text-align: center; border: 1.5px dashed var(--wa-line-strong); border-radius: var(--wa-r-lg); transition: border-color .15s ease-out, background-color .15s ease-out; }
@@ -3288,7 +3288,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     .xfer-text {
       display: block; width: 100%; box-sizing: border-box; resize: vertical; white-space: pre; overflow: auto;
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.45;
-      border-color: var(--wa-line-strong); border-radius: 7px; background: var(--wa-field);
+      border-color: var(--wa-line-strong); border-radius: 9px; background: var(--wa-field);
     }
     .xfer-problem { white-space: pre-line; margin: 0; }
     .xfer-detail { margin-top: 4px; color: var(--secondary-text-color); }
@@ -3300,7 +3300,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
       position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; border-radius: 12px;
       background: color-mix(in srgb, var(--wa-accent) 16%, transparent); font-size: 14px; font-weight: 600;
     }
-    .xfer-drop span { padding: 8px 14px; border-radius: 8px; background: var(--wa-card); }
+    .xfer-drop span { padding: 8px 14px; border-radius: 10px; background: var(--wa-card); }
     .link-note { margin: 4px 12px 0; display: flex; align-items: center; gap: 10px; }
     .xfer-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--wa-line); flex: none; }
     .xfer-foot .spacer { flex: 1; }
@@ -3393,7 +3393,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     .notes-card {
       --nc: var(--wa-val);
       display: flex; flex-direction: column; gap: 8px; margin: 2px 0 6px; padding: 10px 12px;
-      border: 1px solid color-mix(in srgb, var(--nc) 45%, transparent); border-radius: 9px;
+      border: 1px solid color-mix(in srgb, var(--nc) 45%, transparent); border-radius: 12px;
       background: color-mix(in srgb, var(--nc) 7%, var(--wa-card)); color: var(--wa-ink); font-size: 12.5px;
     }
     .notes-card.editing { border-color: var(--nc); }
@@ -3439,7 +3439,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     .notes-card button.nc-done { background: var(--nc); border-color: transparent; color: var(--wa-card); }
     textarea.notes-box {
       font: 12.5px/1.5 ui-monospace, "SF Mono", Menlo, monospace; resize: vertical; min-height: 120px; width: 100%; box-sizing: border-box;
-      padding: 8px 10px; border-radius: 7px; border: 1px solid color-mix(in srgb, var(--wa-val) 40%, var(--wa-line));
+      padding: 8px 10px; border-radius: 9px; border: 1px solid color-mix(in srgb, var(--wa-val) 40%, var(--wa-line));
       background: var(--wa-input); color: var(--wa-ink);
     }
     /* The note stands apart from the layers in the shared-value amber: a lit
@@ -3488,10 +3488,10 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     button.nt-btn.on { background: color-mix(in srgb, var(--wa-val) 16%, var(--wa-panel)); border-color: var(--wa-val); }
     button.nt-btn:disabled { opacity: .4; cursor: default; }
     .nt-links {
-      display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: 8px;
+      display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: 10px;
       border: 1px solid color-mix(in srgb, var(--wa-val) 45%, var(--wa-line)); background: var(--wa-card);
     }
-    .nt-search { display: flex; align-items: center; gap: 6px; padding: 0 8px; height: 30px; border-radius: 7px; background: var(--wa-field); color: var(--wa-muted); }
+    .nt-search { display: flex; align-items: center; gap: 6px; padding: 0 8px; height: 30px; border-radius: 9px; background: var(--wa-field); color: var(--wa-muted); }
     .nt-search svg.ui-icon { width: 14px; height: 14px; flex: none; }
     .nt-search input { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--wa-ink); font: inherit; font-size: 12.5px; outline: none; }
     .nt-list { display: flex; flex-direction: column; max-height: 190px; overflow-y: auto; }
@@ -3503,7 +3503,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     .nt-item .nt-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
     .nt-item .nt-kind { flex: none; font-size: 11px; color: var(--wa-muted); }
     .nt-preview {
-      min-height: 120px; padding: 10px 12px; border-radius: 7px; box-sizing: border-box;
+      min-height: 120px; padding: 10px 12px; border-radius: 9px; box-sizing: border-box;
       border: 1px dashed color-mix(in srgb, var(--wa-val) 45%, var(--wa-line)); background: var(--wa-input);
       display: flex; flex-direction: column; gap: 8px; line-height: 1.5; font-size: 13px; overflow-wrap: anywhere;
     }
@@ -3518,7 +3518,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     /* The gallery's notes line: a switch when there are notes, an offer when
        there are none. */
     .gal-notes {
-      display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border-radius: 9px;
+      display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border-radius: 12px;
       border: 1px solid color-mix(in srgb, var(--wa-val) 40%, transparent);
       background: color-mix(in srgb, var(--wa-val) 7%, var(--wa-card)); font-size: 12.5px;
     }
@@ -3568,7 +3568,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     .tb-saved.flash { color: var(--wa-green); }
     /* The one-time tip in the Layers card, with its way to go. */
     .one-tip {
-      display: flex; align-items: flex-start; gap: 8px; flex: none; margin: 2px 10px 8px; padding: 8px 9px; border-radius: 8px;
+      display: flex; align-items: flex-start; gap: 8px; flex: none; margin: 2px 10px 8px; padding: 8px 9px; border-radius: 10px;
       background: var(--wa-raised); border: 1px solid var(--wa-line-strong); color: var(--wa-soft); font-size: 12px; line-height: 1.4;
     }
     .one-tip > svg { width: 13px; height: 13px; flex: none; margin-top: 2px; color: var(--wa-muted); }
@@ -3604,7 +3604,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     .as-head { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 10px; border-bottom: 1px solid var(--wa-line); flex: none; }
     .as-search {
       flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px 0 10px;
-      border-radius: 7px; background: var(--wa-input); box-shadow: inset 0 0 0 1px var(--wa-line); color: var(--wa-muted);
+      border-radius: 9px; background: var(--wa-input); box-shadow: inset 0 0 0 1px var(--wa-line); color: var(--wa-muted);
     }
     .as-search:focus-within { box-shadow: inset 0 0 0 1px var(--wa-accent), var(--wa-ring); }
     .as-search svg.ui-icon { width: 14px; height: 14px; flex: none; }
@@ -3781,7 +3781,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     .panel-title .tool-set { display: inline-flex; gap: 6px; margin-left: auto; }
 
   `,ie.canvasColumn,N`
-    .banner { padding: 10px 14px; border-radius: 8px; font-size: 13px; background: var(--wa-panel); flex: none; }
+    .banner { padding: 10px 14px; border-radius: 10px; font-size: 13px; background: var(--wa-panel); flex: none; }
     .banner.warn { border-left: 4px solid var(--warning-color, #ffa600); }
     .banner.err { border-left: 4px solid var(--error-color, #db4437); }
     /* Where a copy that was not the open document landed. Not a warning: every
@@ -4066,7 +4066,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     /* A control drawn as a box with a muted word inside it, so "Preview as" is
        part of the field rather than a label floating beside it. */
     .inbox {
-      display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 4px 0 10px; border-radius: 7px;
+      display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 4px 0 10px; border-radius: 9px;
       border: 1px solid var(--wa-line); background: var(--wa-input); flex: none;
     }
     .inbox .pre { color: var(--wa-muted); font-weight: 600; font-size: 12.5px; white-space: nowrap; }
@@ -4086,7 +4086,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     .over {
       display: flex; align-items: center; justify-content: center; flex-wrap: nowrap; gap: 6px;
       position: sticky; top: 0; z-index: 4; justify-self: center;
-      padding: 5px 8px; border-radius: 12px; font-size: 13px; max-width: 100%;
+      padding: 5px 8px; border-radius: 14px; font-size: 13px; max-width: 100%;
       background: color-mix(in srgb, var(--wa-raised) 92%, transparent);
       box-shadow: 0 0 0 1px var(--wa-line), 0 6px 18px rgba(0,0,0,.18);
     }
@@ -4096,7 +4096,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     .row-strip {
       display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
       justify-self: center; max-width: 100%; font-size: 13px;
-      padding: 7px 8px 7px 10px; border-radius: 12px;
+      padding: 7px 8px 7px 10px; border-radius: 14px;
       background: color-mix(in srgb, var(--wa-raised) 92%, transparent);
       box-shadow: 0 0 0 1px var(--wa-line), 0 6px 18px rgba(0,0,0,.18);
     }
@@ -4291,7 +4291,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     /* One value, one 30px white line: name, then what it reads. */
     .vrow {
       display: flex; align-items: center; gap: 8px; width: 100%; min-height: 30px; padding: 0 8px;
-      border-radius: 7px; background: var(--wa-card); font-size: 13px; text-align: left;
+      border-radius: 9px; background: var(--wa-card); font-size: 13px; text-align: left;
     }
     .vrow .spacer { flex: 1; min-width: 0; }
     .vrow .nm { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -4338,7 +4338,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     }
     .sv-uses { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
     .sv-use {
-      display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 24px; padding: 0 8px; border-radius: 12px;
+      display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 24px; padding: 0 8px; border-radius: 14px;
       border: 0; cursor: pointer; font: inherit; font-size: 11.5px; font-weight: 600; color: var(--wa-ink);
       background: color-mix(in srgb, var(--k) 14%, var(--wa-card)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--k) 35%, transparent);
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -4348,7 +4348,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     .sv-use-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--k); }
     .values-list .value-open .value-editor { display: flex; flex-direction: column; gap: 4px; }
     .values-list .shared-help {
-      margin: 0 0 8px; padding: 8px 10px; border-radius: 7px; background: var(--wa-card);
+      margin: 0 0 8px; padding: 8px 10px; border-radius: 9px; background: var(--wa-card);
       font-size: 12.5px; line-height: 1.45; color: var(--wa-ink);
     }
     .values-list .shared-help p { margin: 0 0 6px; }
@@ -4378,7 +4378,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     }
     .vchip.testing { box-shadow: inset 0 0 0 1px var(--wa-states); }
     .vchip.testing .val { color: color-mix(in srgb, var(--wa-states) 70%, var(--wa-ink)); }
-    .vchip input[type=text] { width: 110px; min-height: 24px; font: inherit; font-size: 13px; padding: 2px 6px; border-radius: 6px; border: 1px solid var(--wa-states); background: var(--wa-card); color: inherit; }
+    .vchip input[type=text] { width: 110px; min-height: 24px; font: inherit; font-size: 13px; padding: 2px 6px; border-radius: 8px; border: 1px solid var(--wa-states); background: var(--wa-card); color: inherit; }
     /* A test value's control sits at the end of its row: a slider and its
        reading for a number, a picker for known states, the reading alone for
        text. The row is no longer a button, so it drops the pointer. */
@@ -4482,7 +4482,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
       font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     .how-card {
-      margin: 8px 0 0; padding: 10px 12px; border-radius: 9px; border: 1px solid var(--wa-line);
+      margin: 8px 0 0; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--wa-line);
       background: var(--wa-raised); color: var(--wa-muted); font-size: 12px; line-height: 1.5;
     }
     .how-card b { color: var(--wa-ink); }
@@ -4512,11 +4512,11 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
        A fixed height, so the buttons under it never move as the text changes. */
     .xprev {
       display: grid; grid-template-columns: minmax(96px, 150px) minmax(0, 1fr) auto; gap: 10px; align-items: start;
-      margin: 6px 0 4px; padding: 8px; border-radius: 9px; background: var(--wa-field); min-height: 74px; box-sizing: border-box;
+      margin: 6px 0 4px; padding: 8px; border-radius: 12px; background: var(--wa-field); min-height: 74px; box-sizing: border-box;
     }
     .xprev .well {
       --k: var(--wa-hue-blue);
-      display: block; aspect-ratio: 120 / 46; border-radius: 7px; overflow: hidden; background: #000;
+      display: block; aspect-ratio: 120 / 46; border-radius: 9px; overflow: hidden; background: #000;
       border: 1px solid var(--wa-line-strong); box-sizing: border-box;
     }
     .xprev svg.shot { display: block; width: 100%; height: 100%; }
@@ -4535,7 +4535,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     .chart-numbers .num-row > button.icon { flex: none; margin-top: 8px; }
     /* A row opens in place: the header stays the same button-like strip, and the
        body holds that layer's main settings under it, inside the same border. */
-    .chart-numbers details.num-item { flex: 1; min-width: 0; border-radius: 8px; border: 1px solid var(--wa-line-strong); background: var(--wa-panel); }
+    .chart-numbers details.num-item { flex: 1; min-width: 0; border-radius: 10px; border: 1px solid var(--wa-line-strong); background: var(--wa-panel); }
     .chart-numbers details.num-item:hover { border-color: var(--wa-line-strong); }
     .chart-numbers details.num-item > summary { list-style: none; }
     .chart-numbers details.num-item > summary::-webkit-details-marker { display: none; }
@@ -4589,7 +4589,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     button.xtog:disabled { opacity: .35; cursor: not-allowed; }
     button.xtog:disabled:hover { color: var(--wa-muted); border-color: var(--wa-line-strong); }    dialog.preset-dialog {
       width: min(620px, calc(100vw - 32px)); padding: 16px 18px 18px;
-      border: 1px solid var(--wa-line); border-radius: 12px;
+      border: 1px solid var(--wa-line); border-radius: 14px;
       background: var(--wa-card); color: var(--wa-ink);
       box-shadow: 0 12px 40px rgba(0,0,0,.4);
     }
@@ -4605,7 +4605,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
   `,ie.helpButton,N`
     dialog.help-dialog {
       width: min(880px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0;
-      border: 1px solid var(--wa-line); border-radius: 12px;
+      border: 1px solid var(--wa-line); border-radius: 14px;
       background: var(--wa-card); color: var(--wa-ink);
       box-shadow: 0 12px 40px rgba(0,0,0,.4);
     }
@@ -4832,7 +4832,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     .rules .branches button:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .rules .branches button.active { background: color-mix(in srgb, var(--wa-rule-tone) 55%, var(--wa-panel)); color: var(--wa-ink); border-color: transparent; }
     .rules .branches button.live-match { border-color: var(--wa-hue-green); }
-    pre { font-size: 11px; white-space: pre-wrap; word-break: break-all; max-height: 400px; overflow: auto; background: var(--wa-panel); padding: 8px; border-radius: 6px; }
+    pre { font-size: 11px; white-space: pre-wrap; word-break: break-all; max-height: 400px; overflow: auto; background: var(--wa-panel); padding: 8px; border-radius: 8px; }
   `,Lf,N`
     /* The Advanced editor, laid out the way Home Assistant lays out an
        automation: a heading per section, one full-width row per item that
@@ -5024,7 +5024,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     .band-row .else { font-size: 12px; color: var(--wa-muted); padding-left: 2px; }
     .band-row.hit .le, .band-row.hit .else { color: var(--wa-val); font-weight: 700; }
     .band-row input.band-up {
-      width: 100%; min-width: 0; height: 26px; min-height: 26px; padding: 0 6px; border-radius: 6px;
+      width: 100%; min-width: 0; height: 26px; min-height: 26px; padding: 0 6px; border-radius: 8px;
       border: 1px solid var(--wa-line-strong); background-color: var(--wa-field); box-shadow: none;
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; font-variant-numeric: tabular-nums;
       -moz-appearance: textfield; appearance: textfield;
@@ -5064,7 +5064,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     .xy { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px 6px; min-width: 0; }
     label.pf {
       position: relative; display: flex; align-items: center; height: 26px; min-width: 0;
-      border-radius: 6px; border: 1px solid var(--wa-line-strong); background: var(--wa-field);
+      border-radius: 8px; border: 1px solid var(--wa-line-strong); background: var(--wa-field);
     }
     label.pf:hover { border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); }
     label.pf:focus-within { border-color: var(--c, var(--wa-accent)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c, var(--wa-accent)) 28%, transparent); }
@@ -5088,7 +5088,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
   `,Df,N`
     details.sub { margin: 6px 0; }
     details.sub summary { font-size: 12px; opacity: .8; cursor: pointer; }
-    .chip { display: inline-flex; align-items: center; gap: 6px; height: 24px; font-size: 12px; font-weight: 600; padding: 0 8px; border: 1px solid var(--wa-line); border-radius: 6px; }
+    .chip { display: inline-flex; align-items: center; gap: 6px; height: 24px; font-size: 12px; font-weight: 600; padding: 0 8px; border: 1px solid var(--wa-line); border-radius: 8px; }
     .chip.ent { border-color: transparent; background: var(--wa-ent-bg); color: var(--wa-ent); }
     .chip.val { border-color: transparent; background: var(--wa-val-bg); color: var(--wa-val); }
     button.chip { font: inherit; font-size: 12px; background: transparent; color: inherit; cursor: pointer; }
@@ -5102,7 +5102,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     .value-chip-field { gap: 4px 8px; }
     button.value-chip {
       display: flex; align-items: center; gap: 8px; width: 100%;
-      font: inherit; font-size: 13px; text-align: left; padding: 6px 10px; border-radius: 8px;
+      font: inherit; font-size: 13px; text-align: left; padding: 6px 10px; border-radius: 10px;
       border: 1px solid var(--wa-line); background: var(--wa-card);
       color: inherit; cursor: pointer;
     }
@@ -5121,14 +5121,14 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     /* In an inspector row the chip is a control like the boxes above and
        below it: 26px, 12px text and the same soft fill. */
     .sec-b .field.value-chip-field:not(.compact) > button.value-chip {
-      min-height: 26px; padding: 2px 8px; font-size: 12px; border-radius: 6px;
+      min-height: 26px; padding: 2px 8px; font-size: 12px; border-radius: 8px;
       border-color: var(--wa-line-strong); background: var(--wa-field);
     }
     .sec-b .field.value-chip-field:not(.compact) > button.value-chip:hover { border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); }
     .value-pop {
       position: fixed; inset: auto; margin: 0; width: min(430px, calc(100vw - 16px));
       max-height: 70vh; overflow: auto; padding: 10px 14px 14px;
-      border: 1px solid var(--wa-line); border-radius: 12px;
+      border: 1px solid var(--wa-line); border-radius: 14px;
       background: var(--wa-card); color: var(--wa-ink);
       box-shadow: 0 10px 30px rgba(0,0,0,.35);
     }
@@ -5141,7 +5141,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
        under it. The line never wraps: the name gives way first, then what
        the state changes, and the test and the arrow never do. */
     .state-list { display: flex; flex-direction: column; gap: 4px; margin: 8px 0 4px; min-width: 0; }
-    .state-item { min-width: 0; border-radius: 6px; background: var(--wa-field); }
+    .state-item { min-width: 0; border-radius: 8px; background: var(--wa-field); }
     .state-item.open { box-shadow: inset 0 0 0 1px var(--wa-line-strong); }
     .state-line {
       display: flex; align-items: center; gap: 6px; width: 100%; min-width: 0; height: 28px; padding: 0 6px 0 4px;
@@ -5193,7 +5193,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
        number a quiet mono box, and a set cell the same box again. */
     .when-cell { display: inline-flex; align-items: center; gap: 6px; }
     .when-cell select.when-op {
-      font: inherit; font-size: 12px; font-weight: 500; height: 26px; padding: 0 22px 0 8px; border-radius: 6px;
+      font: inherit; font-size: 12px; font-weight: 500; height: 26px; padding: 0 22px 0 8px; border-radius: 8px;
       border: 1px solid var(--wa-line-strong); background-color: var(--wa-field); color: inherit;
       background-size: 12px; background-position: right 5px center;
       /* Sized for its longest common label rather than its longest option, so
@@ -5205,7 +5205,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     .rhs { display: inline-flex; align-items: center; gap: 2px; }
     .rhs .value-chip-field { margin: 0; }
     input.cellin {
-      font: inherit; font-size: 12px; width: 90px; height: 26px; min-height: 26px; padding: 0 6px; border-radius: 6px;
+      font: inherit; font-size: 12px; width: 90px; height: 26px; min-height: 26px; padding: 0 6px; border-radius: 8px;
       border: 1px solid var(--wa-line-strong); background: var(--wa-field); color: inherit; box-shadow: none;
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums;
     }
@@ -5217,7 +5217,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     button.more:hover { opacity: .9; }
     button.cell {
       display: inline-flex; align-items: center; gap: 6px; max-width: 190px; height: 26px;
-      font: inherit; font-size: 12px; font-weight: 500; text-align: left; padding: 0 8px; border-radius: 6px;
+      font: inherit; font-size: 12px; font-weight: 500; text-align: left; padding: 0 8px; border-radius: 8px;
       border: 1px solid var(--wa-line-strong); background: transparent; color: inherit; cursor: pointer;
     }
     button.cell.filled { background: var(--wa-field); }
@@ -5246,7 +5246,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     button.cell svg { display: block; }
     .states-foot { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
     .sec-b .field .states-foot select.chip-add {
-      width: auto; flex: none; height: 26px; min-height: 26px; padding: 0 22px 0 9px; border-radius: 8px;
+      width: auto; flex: none; height: 26px; min-height: 26px; padding: 0 22px 0 9px; border-radius: 10px;
       border: 1px dashed var(--wa-line-strong); background-color: transparent; font-size: 12px; font-weight: 600;
     }
     /* The add controls under a states table: one strip of buttons, each with
@@ -5255,7 +5255,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     .states > .states-add.centered { justify-content: center; margin: 10px 0 6px; }
     /* The change menu: the settings a state can still change, one per line. */
     .chip-menu {
-      position: fixed; inset: auto; margin: 0; padding: 4px; border-radius: 10px; border: 1px solid var(--wa-line-strong);
+      position: fixed; inset: auto; margin: 0; padding: 4px; border-radius: 12px; border: 1px solid var(--wa-line-strong);
       background: var(--wa-card); color: var(--wa-ink); box-shadow: 0 8px 24px rgba(0, 0, 0, .28);
       min-width: 140px;
     }
@@ -5268,7 +5268,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     /* The tap action menu: every action under its heading, each with one line
        saying what it does, so the choice is readable without a tooltip. */
     .tap-menu {
-      position: fixed; inset: auto; margin: 0; padding: 4px; border-radius: 10px; border: 1px solid var(--wa-line-strong);
+      position: fixed; inset: auto; margin: 0; padding: 4px; border-radius: 12px; border: 1px solid var(--wa-line-strong);
       background: var(--wa-card); color: var(--wa-ink); box-shadow: 0 8px 24px rgba(0, 0, 0, .28);
       width: min(340px, calc(100vw - 16px)); max-height: 70vh; overflow: auto;
     }
@@ -5279,7 +5279,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
        the light theme and the dark one alike. */
     .tap-menu-group {
       --g: var(--wa-muted);
-      display: flex; flex-direction: column; padding: 2px; border-radius: 8px;
+      display: flex; flex-direction: column; padding: 2px; border-radius: 10px;
       background: color-mix(in srgb, var(--g) 9%, var(--wa-card));
       border: 1px solid color-mix(in srgb, var(--g) 28%, transparent);
     }
@@ -5341,7 +5341,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     .field.parts-field > span:first-child { padding-top: 9px; }
     .part-chips {
       min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-height: 34px; padding: 4px;
-      border-radius: 8px; background: var(--wa-field);
+      border-radius: 10px; background: var(--wa-field);
     }
     .part-adds { grid-column: 2; display: flex; flex-wrap: wrap; gap: 6px; }
     .part-adds button.small {
@@ -5381,7 +5381,7 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     }
     /* The one box left inside a card: the part being edited. Its header is a
        strip of its own, so the rows under it line up with the card's. */
-    .part-editor { margin: 0 0 6px; padding: 0 8px 4px; border-radius: 8px; border: 1px solid var(--wa-line); }
+    .part-editor { margin: 0 0 6px; padding: 0 8px 4px; border-radius: 10px; border: 1px solid var(--wa-line); }
     .part-editor button.reset-dot { left: -6px; }
     .part-head {
       display: flex; align-items: center; gap: 2px; height: 30px; margin: 0 -8px 4px; padding: 0 3px 0 9px;
@@ -5415,10 +5415,10 @@ import{c as sa,d as Vl,e as ql,f as gv,g as mn,h as mv,i as wv,j as vv}from"./ch
     .sub-checks .peek-row { border-radius: 6px; margin: 0 -4px; padding: 0 4px; }
     .sub-checks .peek-row:hover { background: color-mix(in srgb, var(--wa-ink) 8%, transparent); }
     .rich-note {
-      margin-top: 8px; padding: 8px 10px; border-radius: 8px; font-size: 12.5px; color: var(--wa-ink);
+      margin-top: 8px; padding: 8px 10px; border-radius: 10px; font-size: 12.5px; color: var(--wa-ink);
       background: color-mix(in srgb, var(--c, var(--wa-accent)) 14%, var(--wa-card));
     }
-    .rich-confirm { margin-top: 8px; padding: 10px; border-radius: 8px; font-size: 12.5px; background: var(--wa-card); box-shadow: inset 0 0 0 1px var(--wa-line-strong); }
+    .rich-confirm { margin-top: 8px; padding: 10px; border-radius: 10px; font-size: 12.5px; background: var(--wa-card); box-shadow: inset 0 0 0 1px var(--wa-line-strong); }
     .rich-confirm .acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 
   `,Of,N`

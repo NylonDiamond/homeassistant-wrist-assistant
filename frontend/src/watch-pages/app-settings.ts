@@ -764,7 +764,7 @@ export const appSettingsStyles = css`
   .ap-template-guide > summary:hover, .ap-template-guide[open] > summary { color: var(--wa-ink); }
   .ap-template-guide > summary::marker { color: var(--wa-accent); }
   .ap-template-guide > summary > svg { display: inline-block; width: 13px; height: 13px; margin: 0 5px 0 2px; vertical-align: -2px; color: var(--wa-accent); }
-  .ap-template-guide-body { display: grid; gap: 6px; padding: 8px 10px; margin-top: 4px; border: 1px solid var(--wa-line); border-radius: 8px; background: color-mix(in srgb, var(--wa-accent) 4%, var(--wa-card)); }
+  .ap-template-guide-body { display: grid; gap: 6px; padding: 8px 10px; margin-top: 4px; border: 1px solid var(--wa-line); border-radius: 10px; background: color-mix(in srgb, var(--wa-accent) 4%, var(--wa-card)); }
   .ap-template-guide table { width: 100%; border-collapse: collapse; table-layout: fixed; text-align: left; }
   .ap-template-guide th { padding: 0 0 5px; color: var(--wa-muted); font-size: 11px; font-weight: 500; }
   .ap-template-guide td { padding: 6px 0; border-top: 1px solid var(--wa-line); }
@@ -781,7 +781,7 @@ export const appSettingsStyles = css`
   .ap-template-examples > .ts-chips { margin-top: 6px; }
   .ap-text { align-items: flex-start; }
   .ap-text textarea { width: 100%; min-height: 96px; resize: vertical; font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
-    color: var(--wa-ink); background: var(--wa-field); border: 1px solid var(--wa-line); border-radius: 6px; padding: 6px 8px; box-sizing: border-box; }
+    color: var(--wa-ink); background: var(--wa-field); border: 1px solid var(--wa-line); border-radius: 8px; padding: 6px 8px; box-sizing: border-box; }
   .ap-row > span { min-width: 0; }
   .ap-list { display: flex; flex-direction: column; max-height: 220px; overflow: auto; padding: 2px 0; }
   /* A row keeps its own height in the scrolling list, and a speaker's name

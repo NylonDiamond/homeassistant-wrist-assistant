@@ -638,7 +638,7 @@ export const watchRowStyles = css`
      tab; it never takes the pointer, so the tab under it stays hovered. */
   .wa-wr-tip {
     position: fixed; inset: auto; margin: 0; box-sizing: border-box; width: 360px; max-width: calc(100vw - 16px);
-    padding: 12px 14px; border: 1px solid var(--wa-line-strong); border-radius: 12px;
+    padding: 12px 14px; border: 1px solid var(--wa-line-strong); border-radius: 14px;
     background: var(--wa-card); color: var(--wa-ink); box-shadow: var(--wa-shadow-pop); pointer-events: none;
   }
   .wa-wr-tip-what { margin: 0 0 10px; font-size: 13px; line-height: 1.45; color: var(--wa-label); }
@@ -655,13 +655,13 @@ export const watchRowStyles = css`
      it is and how its complications stand. */
   .wa-wr-watch, button.wa-wr-open {
     display: inline-flex; align-items: center; gap: 10px; min-height: 42px; max-width: 300px; box-sizing: border-box;
-    padding: 5px 12px 5px 6px; border-radius: 11px; text-align: left;
+    padding: 5px 12px 5px 6px; border-radius: 14px; text-align: left;
     font: inherit; color: var(--wa-ink); background: var(--wa-card); border: 1px solid var(--wa-line-strong);
   }
   .wa-wr-watch, .wa-wr-picker, button.wa-wr-pair { flex: none; min-width: 0; }
   .wa-wr-art {
     width: 30px; height: 30px; box-sizing: border-box; flex: none; display: grid; place-items: center;
-    border-radius: 8px; background: var(--wa-bg); border: 1px solid var(--wa-line);
+    border-radius: 10px; background: var(--wa-bg); border: 1px solid var(--wa-line);
   }
   .wa-wr-art svg.ha-mini { width: 16px; height: 21px; display: block; }
   .wa-wr-art .ha-lit { stroke: var(--c); }
@@ -696,13 +696,13 @@ export const watchRowStyles = css`
   .wa-wr-menu {
     position: absolute; left: 0; top: calc(100% + 6px); width: min(300px, calc(100vw - 24px)); box-sizing: border-box;
     display: flex; flex-direction: column; gap: 2px; padding: 6px;
-    background: var(--wa-card); border: 1px solid var(--wa-line-strong); border-radius: 10px;
+    background: var(--wa-card); border: 1px solid var(--wa-line-strong); border-radius: 12px;
     box-shadow: var(--wa-shadow-pop); z-index: 2;
   }
   .wa-wr-menu-h { padding: 6px 8px 4px; font-size: 11px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: var(--wa-muted); }
   button.wa-wr-row {
     display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 10px; box-sizing: border-box;
-    border-radius: 6px; font: inherit; font-size: 13px; text-align: left; cursor: pointer;
+    border-radius: 8px; font: inherit; font-size: 13px; text-align: left; cursor: pointer;
     color: var(--wa-ink); background: transparent; border: 1px solid var(--wa-line);
   }
   button.wa-wr-row:hover { background: var(--wa-hover); border-color: var(--wa-line-strong); }
@@ -731,7 +731,7 @@ export const watchRowStyles = css`
   .wa-ip-empty h2 { margin: 0; font-size: 18px; font-weight: 500; }
   .wa-ip-empty p { margin: 0; max-width: 440px; font-size: 13px; line-height: 1.45; color: var(--wa-muted); }
   span.wa-ip-empty-chip {
-    display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; box-sizing: border-box;
+    display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; box-sizing: border-box;
     color: var(--wa-muted); border: 1px solid var(--wa-line-strong);
   }
   span.wa-ip-empty-chip svg.ui-icon { width: 20px; height: 20px; }

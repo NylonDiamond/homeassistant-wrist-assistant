@@ -377,14 +377,14 @@ const columnsRun = css`
 
 /** One card shape everywhere. */
 const cardRun = css`
-    /* One card shape everywhere: white paper, a 12px corner, and a hairline
-       drawn as a ring rather than a border, so nothing inside has to account
-       for a border box. */
+    /* One card shape everywhere: white paper, the skin's middle corner, a
+       hairline drawn as a ring rather than a border, so nothing inside has
+       to account for a border box, and the soft shadow a card rests on. */
     .card {
       background: var(--wa-card);
       border: 0;
       border-radius: var(--wa-r-md);
-      box-shadow: 0 0 0 1px var(--wa-line);
+      box-shadow: 0 0 0 1px var(--wa-line), var(--wa-shadow-card, 0 0 transparent);
       padding: 10px 12px 12px;
     }
 `;
@@ -881,7 +881,7 @@ const sharedValueRowsRun = css`
     }
     .svr-now.none { font-family: inherit; font-weight: 500; font-style: italic; color: var(--wa-muted); background: transparent; }
     .svr-uses {
-      min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px; display: grid; place-items: center;
+      min-width: 22px; height: 22px; padding: 0 6px; border-radius: 14px; display: grid; place-items: center;
       font-size: 12px; font-weight: 500; color: var(--wa-ink); background: var(--wa-raise);
     }
     .svr-end { display: grid; place-items: center; min-width: 28px; }
@@ -1097,7 +1097,7 @@ const stageRun = css`
          keeps it clear of the selection's name over the face's corner. */
       position: sticky; top: 0; left: 0; right: 0; z-index: 5; flex: none; box-sizing: border-box; margin-bottom: 16px;
       display: flex; align-items: center; gap: 2px; height: 34px; padding: 0 4px; max-width: calc(100cqw - 24px);
-      border-radius: 8px; background: var(--wa-float-bg); border: 1px solid var(--wa-line-strong); box-shadow: var(--wa-float-shadow);
+      border-radius: 10px; background: var(--wa-float-bg); border: 1px solid var(--wa-line-strong); box-shadow: var(--wa-float-shadow);
     }
     button.tb {
       display: inline-flex; align-items: center; gap: 7px; flex: none; height: 26px; padding: 0 10px; border-radius: 999px;
@@ -1163,7 +1163,7 @@ const stageToolsTailRun = css`
     .snap-row .tog.on { background: var(--wa-switch-on); }
     .snap-row .tog i { position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 5px; background: #fff; transition: left .12s ease-out; }
     .snap-row .tog.on i { left: 14px; }
-    .snap-steps { display: flex; gap: 2px; margin: 0 6px 4px 46px; padding: 2px; border-radius: 6px; background: var(--wa-field); }
+    .snap-steps { display: flex; gap: 2px; margin: 0 6px 4px 46px; padding: 2px; border-radius: 8px; background: var(--wa-field); }
     .snap-steps button {
       flex: 1; padding: 3px 6px; border: 0; border-radius: 5px; background: transparent; color: var(--wa-muted); cursor: pointer;
       font: inherit; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums;
@@ -1220,7 +1220,7 @@ const litStageRun = css`
       order: 9; align-self: center; position: relative; top: auto; z-index: 8;
       margin: 8px 0 0; height: auto; min-height: 40px; width: max-content; max-width: calc(100% - 8px);
       display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 4px; row-gap: 4px; padding: 4px;
-      border-radius: 12px; background: var(--wa-card); border: 1px solid var(--wa-line-strong);
+      border-radius: 14px; background: var(--wa-card); border: 1px solid var(--wa-line-strong);
       box-shadow: var(--wa-shadow-float, var(--wa-shadow-pop));
     }
     /* Neutral 30px controls, each with its own one pixel outline. */
@@ -1272,7 +1272,7 @@ const valuesFootRun = css`
       max-height: min(40vh, 236px); overflow-y: auto; scrollbar-width: thin;
     }
     .vchip.vpill {
-      display: flex; align-items: center; gap: 8px; flex: none; width: auto; height: 28px; padding: 0 10px; border-radius: 6px;
+      display: flex; align-items: center; gap: 8px; flex: none; width: auto; height: 28px; padding: 0 10px; border-radius: 8px;
       background: var(--wa-field); border: 1px solid var(--wa-line-strong); font-size: 13px; color: var(--wa-ink); cursor: default;
       /* The slider's knob ring is the row it sits on. */
       --wa-range-ring: var(--wa-field);
@@ -1365,7 +1365,7 @@ const inspectorHeadRun = css`
     .crumbs .nm { min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; font-weight: 600; color: var(--wa-ink); }
     /* The kind as a neutral pill, the same one that names it over the face. */
     .crumbs .kchip {
-      flex: none; display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 6px;
+      flex: none; display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 8px;
       font-size: 11px; font-weight: 600; letter-spacing: 0; text-transform: none;
       background: var(--wa-field); color: var(--wa-soft); box-shadow: inset 0 0 0 1px var(--wa-line-strong);
     }
@@ -1495,7 +1495,7 @@ const sectionCardTailRun = css`
     .name-sec .sec-h .swatch { display: none; }
     .name-sec .sec-h input[type=text] {
       flex: 1 1 auto; width: 0; min-width: 0; height: 28px; min-height: 28px; padding: 0 10px; font-size: 13px;
-      border-radius: 6px; border-color: var(--wa-line-strong); background-color: var(--wa-field);
+      border-radius: 8px; border-color: var(--wa-line-strong); background-color: var(--wa-field);
     }
     .name-sec .sec-h input[type=text]:focus-visible { border-color: var(--wa-accent); box-shadow: var(--wa-ring); }
     /* An empty name shows the automatic title, which is the layer's real name

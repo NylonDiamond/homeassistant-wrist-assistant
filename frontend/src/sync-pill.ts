@@ -272,7 +272,7 @@ export const syncPillStyles = css`
   details.wa-sync[open] .wa-sync-chev { transform: rotate(180deg); }
   .wa-sync-pop {
     position: absolute; top: calc(100% + 6px); right: 0; z-index: 60; width: 360px; max-width: calc(100vw - 24px);
-    box-sizing: border-box; padding: 6px; border-radius: 12px;
+    box-sizing: border-box; padding: 6px; border-radius: 14px;
     background: var(--wa-card); border: 1px solid var(--wa-line-strong); box-shadow: var(--wa-shadow-pop);
     max-height: min(70vh, 520px); overflow: auto;
   }
@@ -288,7 +288,7 @@ export const syncPillStyles = css`
   a.wa-sync-row:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   .wa-sync-row.waiting { background: color-mix(in srgb, var(--wa-amber) 9%, transparent); }
   .wa-sync-art {
-    display: grid; place-items: center; width: 24px; height: 24px; flex: none; box-sizing: border-box; border-radius: 6px;
+    display: grid; place-items: center; width: 24px; height: 24px; flex: none; box-sizing: border-box; border-radius: 8px;
     border: 1.25px solid var(--c, var(--wa-line-strong)); color: var(--c, var(--wa-muted)); background: var(--wa-bg);
   }
   .wa-sync-art svg.ui-icon { width: 14px; height: 14px; }

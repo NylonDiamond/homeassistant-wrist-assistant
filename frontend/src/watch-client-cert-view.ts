@@ -462,7 +462,7 @@ export const clientCertStyles = css`
   .ws-cert .ws-cert-pass input[type=password] {
     width: 100%; min-width: 0; box-sizing: border-box; height: 28px; min-height: 28px; padding: 0 9px;
     font: inherit; font-size: 13px; font-weight: 500; color: var(--wa-ink);
-    border: 1px solid var(--wa-line-strong); border-radius: 6px; background-color: var(--wa-field);
+    border: 1px solid var(--wa-line-strong); border-radius: 8px; background-color: var(--wa-field);
     transition: border-color .12s ease-out, box-shadow .12s ease-out;
   }
   .ws-cert .ws-cert-pass input[type=password]:hover:not(:disabled) { border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); }

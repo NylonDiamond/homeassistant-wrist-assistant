@@ -925,7 +925,7 @@ export const menuStageStyles = css`
   svg.ms-play-glyph { fill: currentColor; stroke: none; }
   .ms-foot { display: flex; justify-content: center; }
   button.ms-change {
-    margin: 2px 0 0; padding: 3px 10px; border: 1px solid var(--wa-line-strong); border-radius: 6px;
+    margin: 2px 0 0; padding: 3px 10px; border: 1px solid var(--wa-line-strong); border-radius: 8px;
     background: var(--wa-card); color: var(--wa-ink); font: inherit; font-size: 12px; cursor: pointer;
   }
   button.ms-change:hover { background: var(--wa-hover); }

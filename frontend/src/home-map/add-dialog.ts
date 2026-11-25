@@ -528,7 +528,7 @@ export const homeMapAddDialogStyles = css`
      letter typed. */
   .hma-list {
     height: min(380px, 46vh); overflow: auto; overscroll-behavior: contain; padding: 4px 6px 8px;
-    border: 1px solid var(--wa-line); border-radius: 12px; background: var(--wa-raised, var(--wa-card));
+    border: 1px solid var(--wa-line); border-radius: 14px; background: var(--wa-raised, var(--wa-card));
     display: flex; flex-direction: column; gap: 8px;
   }
   .hma-sec { display: flex; flex-direction: column; gap: 2px; }

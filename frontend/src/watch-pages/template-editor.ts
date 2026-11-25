@@ -732,7 +732,7 @@ export const templateEditorStyles = css`
   }
   .te-d:popover-open .te-grid { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 12px; align-items: start; }
   .te-d:popover-open .te-col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-  .te-card { --te-hue: 150, 150, 160; display: flex; flex-direction: column; min-width: 0; border: 1px solid var(--wa-line); border-radius: 11px; background: color-mix(in srgb, var(--wa-ink) 1.5%, var(--wa-card)); }
+  .te-card { --te-hue: 150, 150, 160; display: flex; flex-direction: column; min-width: 0; border: 1px solid var(--wa-line); border-radius: 14px; background: color-mix(in srgb, var(--wa-ink) 1.5%, var(--wa-card)); }
   .te-card[data-card="tile"] { --te-hue: 236, 186, 82; }
   .te-card[data-card="code"] { --te-hue: 176, 150, 255; }
   .te-card[data-card="display"] { --te-hue: 72, 206, 190; }
@@ -750,7 +750,7 @@ export const templateEditorStyles = css`
   .te-quick-row { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 8px; align-items: start; }
   .te-quick-lab { padding-top: 4px; font-size: 11.5px; color: var(--wa-muted); }
   .te-quick + .tpl-box { padding-top: 4px; }
-  .te-well { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 8px 10px 10px; border: 1px solid var(--wa-line); border-radius: 12px; background: var(--wa-well, #000); }
+  .te-well { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 8px 10px 10px; border: 1px solid var(--wa-line); border-radius: 14px; background: var(--wa-well, #000); }
   .te-seg { display: inline-flex; padding: 2px; border-radius: 999px; background: var(--wa-panel); }
   .te-well .te-seg { align-self: flex-end; }
   .te-seg button { font: inherit; font-size: 11.5px; font-weight: 600; min-height: 22px; padding: 2px 9px; border: 0; border-radius: 999px; background: none; color: var(--wa-muted); cursor: pointer; }
@@ -766,7 +766,7 @@ export const templateEditorStyles = css`
   .te-item-tools input { margin: 0; accent-color: var(--wa-hue-blue); }
   .te-item-link { border: 0; padding: 3px 0; font: inherit; color: var(--wa-hue-blue); background: transparent; cursor: pointer; }
   .te-item-link:disabled { opacity: .45; cursor: default; }
-  .te-item-inspector { display: flex; flex-direction: column; gap: 10px; padding: 11px; border: 1px solid var(--wa-line-strong); border-radius: 9px; background: color-mix(in srgb, var(--wa-ink) 3%, transparent); }
+  .te-item-inspector { display: flex; flex-direction: column; gap: 10px; padding: 11px; border: 1px solid var(--wa-line-strong); border-radius: 12px; background: color-mix(in srgb, var(--wa-ink) 3%, transparent); }
   .te-item-head, .te-item-field > span { display: flex; align-items: center; gap: 5px; min-height: 20px; font-size: 12px; }
   .te-item-head { justify-content: space-between; }
   .te-item-head b { overflow-wrap: anywhere; }
@@ -775,7 +775,7 @@ export const templateEditorStyles = css`
   .te-reset-dot { width: 20px; height: 20px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border: 0; background: none; cursor: pointer; flex: none; }
   .te-reset-dot::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--wa-hue-blue); }
   .te-item-align { display: flex; gap: 6px; }
-  .te-item-align button { flex: 1; display: flex; align-items: center; justify-content: center; gap: 3px; min-width: 0; padding: 6px 4px; border: 1px solid var(--wa-line-strong); border-radius: 6px; background: var(--wa-panel); color: var(--wa-ink); font: inherit; font-size: 11px; cursor: pointer; }
+  .te-item-align button { flex: 1; display: flex; align-items: center; justify-content: center; gap: 3px; min-width: 0; padding: 6px 4px; border: 1px solid var(--wa-line-strong); border-radius: 8px; background: var(--wa-panel); color: var(--wa-ink); font: inherit; font-size: 11px; cursor: pointer; }
   .te-item-align button:hover { border-color: var(--wa-hue-blue); }
   .te-item-align button:disabled { opacity: .45; cursor: default; }
   .te-item-size { display: flex; align-items: center; gap: 6px; }
@@ -783,11 +783,11 @@ export const templateEditorStyles = css`
   .te-item-color { display: flex; align-items: center; gap: 8px; font-size: 11.5px; }
   .te-item-color > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
   .te-item-color small { display: block; color: var(--wa-muted); }
-  .te-item-color input { width: 28px; height: 28px; padding: 2px; border: 1px solid var(--wa-line-strong); border-radius: 5px; background: var(--wa-field, var(--wa-input)); cursor: pointer; }
-  .te-symbol-picker summary { display: flex; align-items: center; width: fit-content; cursor: pointer; padding: 6px 10px; border: 1px solid var(--wa-line-strong); border-radius: 6px; }
+  .te-item-color input { width: 28px; height: 28px; padding: 2px; border: 1px solid var(--wa-line-strong); border-radius: 7px; background: var(--wa-field, var(--wa-input)); cursor: pointer; }
+  .te-symbol-picker summary { display: flex; align-items: center; width: fit-content; cursor: pointer; padding: 6px 10px; border: 1px solid var(--wa-line-strong); border-radius: 8px; }
   .te-symbol-picker[open] input { margin-top: 8px; }
   .te-symbol-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(30px, 1fr)); gap: 4px; margin-top: 6px; }
-  .te-symbol-grid button { border: 1px solid var(--wa-line); border-radius: 5px; padding: 5px; background: var(--wa-panel); color: var(--wa-ink); cursor: pointer; }
+  .te-symbol-grid button { border: 1px solid var(--wa-line); border-radius: 7px; padding: 5px; background: var(--wa-panel); color: var(--wa-ink); cursor: pointer; }
   .te-tile.found [data-tp] { cursor: pointer; border-radius: 5px; outline: 1.5px solid transparent; outline-offset: 1px; transition: outline-color .12s; }
   .te-tile.found [data-tp]:hover { outline-color: color-mix(in srgb, currentColor 50%, transparent); }
   .te-tile.found [data-tp].on { outline-color: var(--wa-hue-orange); }
@@ -822,7 +822,7 @@ export const templateEditorStyles = css`
     .te-taps-body .te-tap-form, .te-taps-body .te-tap-none { max-width: 600px; }
   }
   .te-tap-list { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-  .te-tap-row { display: flex; align-items: center; gap: 9px; min-width: 0; min-height: 36px; padding: 4px 10px 4px 6px; border: 1px solid var(--wa-line); border-radius: 8px; background: none; color: var(--wa-ink); font: inherit; text-align: left; cursor: pointer; }
+  .te-tap-row { display: flex; align-items: center; gap: 9px; min-width: 0; min-height: 36px; padding: 4px 10px 4px 6px; border: 1px solid var(--wa-line); border-radius: 10px; background: none; color: var(--wa-ink); font: inherit; text-align: left; cursor: pointer; }
   .te-tap-row:hover { background: var(--wa-panel); }
   .te-tap-row:focus-visible, .te-tap-add:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   .te-tap-row.on { background: var(--wa-pick-bg); border-color: var(--wa-pick-line); }
@@ -831,7 +831,7 @@ export const templateEditorStyles = css`
   .te-tap-words { display: flex; flex-direction: column; min-width: 0; }
   .te-tap-words b { font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .te-tap-words small { font-size: 11px; color: var(--wa-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .te-tap-add { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 32px; padding: 0 10px; border: 1px dashed var(--wa-line-strong); border-radius: 8px; background: none; color: var(--wa-hue-blue); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+  .te-tap-add { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 32px; padding: 0 10px; border: 1px dashed var(--wa-line-strong); border-radius: 10px; background: none; color: var(--wa-hue-blue); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; }
   .te-tap-add > span { font-size: 15px; font-weight: 500; line-height: 1; }
   .te-tap-add:hover:not(:disabled) { border-color: var(--wa-hue-blue); background: color-mix(in srgb, var(--wa-hue-blue) 8%, transparent); }
   .te-tap-add:disabled { opacity: .45; cursor: default; }
@@ -858,7 +858,7 @@ export const templateEditorStyles = css`
   .te-item-tap .field.entity-field > :not(:first-child) { grid-column: auto; }
   .te-item-tap .ent-chosen, .te-item-tap .ent-box input { height: 30px; min-height: 30px; }
   .te-item-tap .te-tap-confirm { padding-top: 0; border-top: 0; }
-  .te-tap-none { display: flex; align-items: center; justify-content: center; min-height: 72px; padding: 12px; border: 1px dashed var(--wa-line); border-radius: 9px; font-size: 12px; color: var(--wa-muted); text-align: center; }
+  .te-tap-none { display: flex; align-items: center; justify-content: center; min-height: 72px; padding: 12px; border: 1px dashed var(--wa-line); border-radius: 12px; font-size: 12px; color: var(--wa-muted); text-align: center; }
   /* The picked area's card: each title over its control, at the card's width. */
   .te-tap-form { gap: 12px; padding: 12px; background: color-mix(in srgb, var(--wa-ink) 2%, transparent); }
   .te-tap-form .te-item-head { font-size: 13px; }
@@ -896,11 +896,11 @@ export const templateEditorStyles = css`
   .te-switch.on { background: var(--wa-switch-on); }
   .te-switch.on::after { transform: translateX(15px); }
   .te-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-  .te-chip { font: inherit; font-size: 12px; font-weight: 600; min-height: 23px; padding: 0 9px; border: 1px solid var(--wa-line-strong); border-radius: 7px; background: none; color: var(--wa-ink); cursor: pointer; }
+  .te-chip { font: inherit; font-size: 12px; font-weight: 600; min-height: 23px; padding: 0 9px; border: 1px solid var(--wa-line-strong); border-radius: 9px; background: none; color: var(--wa-ink); cursor: pointer; }
   .te-chip:hover { background: var(--wa-panel); }
   .te-chip.on { background: var(--wa-pick-bg); border-color: var(--wa-pick-line); }
   .te-cm { min-width: 0; }
-  .te-plain { width: 100%; box-sizing: border-box; font: 12.5px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--wa-ink); background: var(--wa-field, var(--wa-input)); border: 1px solid var(--wa-line-strong); border-radius: 9px; padding: 6px 10px; }
+  .te-plain { width: 100%; box-sizing: border-box; font: 12.5px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--wa-ink); background: var(--wa-field, var(--wa-input)); border: 1px solid var(--wa-line-strong); border-radius: 12px; padding: 6px 10px; }
   .te-issues { display: flex; flex-direction: column; gap: 5px; }
   .te-issue { display: flex; align-items: center; gap: 9px; padding: 6px 9px; border: 1px solid color-mix(in srgb, var(--wa-need) 45%, transparent); border-radius: 8px; font-size: 12px; color: var(--wa-need); }
   .te-issue > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
@@ -909,7 +909,7 @@ export const templateEditorStyles = css`
   .te-issue .te-chip { flex: none; color: var(--wa-ink); }
   .te-hint { font-size: 11.5px; color: var(--wa-muted); }
   .te-hint.warn { color: var(--wa-hue-red); }
-  .te-tap-data { box-sizing: border-box; width: 100%; min-width: 0; resize: vertical; background: var(--wa-field, var(--wa-input)); color: var(--wa-ink); border: 1px solid var(--wa-line-strong); border-radius: 6px; padding: 5px 7px; font: 11.5px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .te-tap-data { box-sizing: border-box; width: 100%; min-width: 0; resize: vertical; background: var(--wa-field, var(--wa-input)); color: var(--wa-ink); border: 1px solid var(--wa-line-strong); border-radius: 8px; padding: 5px 7px; font: 11.5px ui-monospace, SFMono-Regular, Menlo, monospace; }
   .te-tap-data[aria-invalid="true"] { border-color: var(--wa-hue-red); }
   /* Inside the code. */
   .te-i { color: var(--wa-hue-purple); }

@@ -456,7 +456,7 @@ export const libraryTicksStyles = css`
      without that sheet (the Pages tab) draws them the same. */
   .lt-ask {
     display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; max-width: 520px; padding: 8px 10px;
-    border-radius: 8px; background: var(--wa-card); box-shadow: inset 0 0 0 1px var(--wa-line-strong);
+    border-radius: 10px; background: var(--wa-card); box-shadow: inset 0 0 0 1px var(--wa-line-strong);
     font-size: 12px; line-height: 1.4; color: var(--wa-ink);
   }
   .lt-ask-q { flex: 1 1 220px; min-width: 0; }
@@ -491,7 +491,7 @@ export const libraryTicksStyles = css`
   .lt-fold-pop {
     position: absolute; top: calc(100% + 6px); left: 0; z-index: 50;
     display: flex; flex-wrap: wrap; gap: 6px; min-width: 240px; max-width: 360px; padding: 8px; box-sizing: border-box;
-    background: var(--wa-card); border: 1px solid var(--wa-line-strong); border-radius: 10px;
+    background: var(--wa-card); border: 1px solid var(--wa-line-strong); border-radius: 12px;
     box-shadow: var(--wa-shadow-pop, 0 8px 24px rgba(0, 0, 0, .28));
   }
   .lt-fold-pop .lt-chip.off { display: inline-flex; }

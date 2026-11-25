@@ -200,7 +200,7 @@ export const homeLineupStyles = css`
   .hl-t { display: flex; flex-direction: column; gap: 1px; flex: 1 1 auto; min-width: 0; }
   .hl-name { font-size: 13px; font-weight: 600; color: var(--wa-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .hl-detail { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 11.5px; color: var(--wa-muted); }
-  .hl-tag { font-style: normal; font-size: 10.5px; font-weight: 600; padding: 0 5px; border-radius: 5px; border: 1px solid var(--wa-line); color: var(--wa-muted); }
+  .hl-tag { font-style: normal; font-size: 10.5px; font-weight: 600; padding: 0 5px; border-radius: 7px; border: 1px solid var(--wa-line); color: var(--wa-muted); }
   .hl-edit {
     flex: none; display: inline-flex; align-items: center; justify-content: center; height: 26px; padding: 0 10px; border-radius: 999px;
     border: 1px solid var(--wa-line-strong); background: none; color: var(--wa-ink); font: inherit; font-size: 12px; font-weight: 600;
@@ -231,7 +231,7 @@ export const homeLineupStyles = css`
   .hl-lines.strip .hl-grip { position: absolute; top: 24px; left: 3px; z-index: 1; }
   .hl-rm {
     display: inline-flex; align-items: center; justify-content: center; flex: none; width: 24px; height: 24px; padding: 0;
-    border-radius: 6px; border: 1px solid var(--wa-line); background: var(--wa-card); color: var(--wa-muted); cursor: pointer;
+    border-radius: 8px; border: 1px solid var(--wa-line); background: var(--wa-card); color: var(--wa-muted); cursor: pointer;
     opacity: 0; transition: opacity .12s ease;
   }
   .hl-rm svg { width: 13px; height: 13px; }
@@ -242,7 +242,7 @@ export const homeLineupStyles = css`
   @media (hover: none) { .hl-rm { opacity: 1; } }
   .hl-lines.strip .hl-rm { position: absolute; top: 4px; right: 4px; z-index: 1; }
   .hl-lines:not(.strip) .hl-rm { order: 9; }
-  .hl-note { margin: 0; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--wa-line); font-size: 12.5px; color: var(--wa-muted);
+  .hl-note { margin: 0; padding: 6px 10px; border-radius: 10px; border: 1px solid var(--wa-line); font-size: 12.5px; color: var(--wa-muted);
     display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
   .hl-note.warn { color: var(--wa-amber); border-color: var(--wa-amber-line, var(--wa-line)); }
   .hl-note.err { color: var(--wa-need); border-color: color-mix(in srgb, var(--wa-need) 40%, var(--wa-line)); }
@@ -267,7 +267,7 @@ export const homeAllStyles = css`
   .ha-part-head { display: flex; align-items: center; gap: 8px; }
   .ha-part-head h3 { margin: 0; font-size: 14px; font-weight: 600; color: var(--wa-ink); }
   .ha-ic {
-    display: inline-flex; align-items: center; justify-content: center; flex: none; width: 28px; height: 28px; border-radius: 8px;
+    display: inline-flex; align-items: center; justify-content: center; flex: none; width: 28px; height: 28px; border-radius: 10px;
     border: 1px solid var(--h, var(--wa-line)); color: var(--wa-ink);
   }
   .ha-ic svg { width: 15px; height: 15px; }

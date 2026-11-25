@@ -12,7 +12,7 @@ export const libraryListStyles = css`
   .lt-sect { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; padding: 0 2px; font-size: 12.5px; font-weight: 600; color: var(--wa-muted); }
   .lt-sect small { font-size: 12px; font-weight: 500; color: color-mix(in srgb, var(--wa-muted) 75%, transparent); }
   .lt-sect-r { margin-left: auto; font-size: 11.5px; font-weight: 400; color: var(--wa-muted); }
-  .lt-list { display: flex; flex-direction: column; min-width: 0; border: 1px solid var(--wa-line-strong); border-radius: 8px; overflow: hidden; background: var(--wa-card); }
+  .lt-list { display: flex; flex-direction: column; min-width: 0; border: 1px solid var(--wa-line-strong); border-radius: 10px; overflow: hidden; background: var(--wa-card); }
   .lt-row {
     display: flex; align-items: center; gap: 10px; min-width: 0; padding: 7px 12px 7px 8px;
     border-top: 1px solid var(--wa-line); background: var(--wa-card); font-size: 13px;
@@ -37,14 +37,14 @@ export const libraryListStyles = css`
   .lt-row.hid { color: var(--wa-muted); }
   .lt-row.hid .lt-row-n { text-decoration: line-through; text-decoration-color: var(--wa-line-strong); }
   .lt-eye {
-    flex: none; padding: 2px 7px; border-radius: 5px; border: 1px solid var(--wa-line-strong); background: transparent;
+    flex: none; padding: 2px 7px; border-radius: 7px; border: 1px solid var(--wa-line-strong); background: transparent;
     font: inherit; font-size: 11px; color: var(--wa-muted); cursor: pointer;
   }
   .lt-eye:hover:not(:disabled) { color: var(--wa-ink); background: var(--wa-hover); }
   .lt-eye:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   .lt-eye:disabled { opacity: .5; cursor: progress; }
   .lt-pick-sel {
-    flex: none; max-width: 190px; height: 26px; padding: 0 24px 0 9px; border-radius: 6px; border: 1px solid var(--wa-line-strong);
+    flex: none; max-width: 190px; height: 26px; padding: 0 24px 0 9px; border-radius: 8px; border: 1px solid var(--wa-line-strong);
     font: inherit; font-size: 12.5px; color: var(--wa-ink); background-color: var(--wa-input, var(--wa-field)); cursor: pointer;
     appearance: none; -webkit-appearance: none;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238a8a8f' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");

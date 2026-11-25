@@ -1113,7 +1113,7 @@ export const httpActionsViewStyles = css`
   .ha-list-note { flex: none; margin: 4px 10px 8px; color: var(--wa-muted); }
   .ha-items { display: flex; flex-direction: column; gap: 1px; padding: 0 6px 6px; overflow-y: auto; min-height: 0; flex: 0 1 auto; scrollbar-width: thin; }
   .ha-item {
-    position: relative; display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 8px; border-radius: 6px;
+    position: relative; display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 8px; border-radius: 8px;
     cursor: pointer; user-select: none; font-size: 13px; color: var(--wa-ink); flex: none; background: var(--wa-card);
   }
   .ha-item:hover { background: var(--wa-hover); }
@@ -1148,7 +1148,7 @@ export const httpActionsViewStyles = css`
   @media (hover: none) { .ha-item-acts { position: static; transform: none; opacity: 1; pointer-events: auto; } }
   .ha-list-foot { flex: none; padding: 6px; border-top: 1px solid var(--wa-line); }
   .ha-count {
-    flex: none; min-width: 20px; height: 18px; padding: 0 6px; border-radius: 9px; display: inline-grid; place-items: center;
+    flex: none; min-width: 20px; height: 18px; padding: 0 6px; border-radius: 12px; display: inline-grid; place-items: center;
     font-size: 11px; font-weight: 600; color: var(--wa-muted); background: var(--wa-field); font-variant-numeric: tabular-nums;
   }
 
@@ -1189,7 +1189,7 @@ export const httpActionsViewStyles = css`
   .ha-reqbar { flex: none; display: flex; align-items: stretch; gap: 8px; padding: 4px 12px 8px; }
   .ha-reqbox {
     flex: 1 1 auto; min-width: 0; display: flex; align-items: stretch; height: 36px;
-    border: 1px solid var(--wa-line-strong); border-radius: 8px; background: var(--wa-input); overflow: hidden;
+    border: 1px solid var(--wa-line-strong); border-radius: 10px; background: var(--wa-input); overflow: hidden;
   }
   .ha-reqbox:focus-within { border-color: var(--wa-accent); box-shadow: var(--wa-ring); }
   .ha-reqbox select.ha-method {
@@ -1247,7 +1247,7 @@ export const httpActionsViewStyles = css`
   .ha-secret > input { flex: 1; min-width: 0; }
   input[type=password] {
     font: inherit; font-size: 13px; font-weight: 500; color: var(--wa-ink); min-height: 28px; height: 28px;
-    padding: 0 9px; border-radius: 6px; border: 1px solid var(--wa-line-strong); background: var(--wa-input);
+    padding: 0 9px; border-radius: 8px; border: 1px solid var(--wa-line-strong); background: var(--wa-input);
   }
   input[type=password]:focus-visible { outline: none; border-color: var(--wa-accent); box-shadow: var(--wa-ring); }
   .ha-secret > input[type=text] { height: 28px; min-height: 28px; padding: 0 9px; font-size: 12px; }
@@ -1261,7 +1261,7 @@ export const httpActionsViewStyles = css`
 
   /* A key and value table: hairlines between rows and cells, the boxes flat
      in their cells, as an HTTP client draws one. */
-  .ha-table { --cols: minmax(0, 2fr) minmax(0, 3fr) 48px; max-width: 1100px; border: 1px solid var(--wa-line); border-radius: 8px; overflow: hidden; }
+  .ha-table { --cols: minmax(0, 2fr) minmax(0, 3fr) 48px; max-width: 1100px; border: 1px solid var(--wa-line); border-radius: 10px; overflow: hidden; }
   .ha-gtable { --cols: minmax(0, 2fr) minmax(0, 3fr) 110px 48px; }
   .ha-tr { display: grid; grid-template-columns: var(--cols); align-items: stretch; border-top: 1px solid var(--wa-line); }
   .ha-tr:first-child { border-top: 0; }
@@ -1304,7 +1304,7 @@ export const httpActionsViewStyles = css`
   label.ha-inline select { min-width: 130px; }
   .ha-qbar { position: static; margin: 0; padding: 0; background: none; }
   .ha-bad { color: var(--wa-amber); font-weight: 600; }
-  .ha-code { position: relative; flex: 1 1 auto; min-height: 140px; border: 1px solid var(--wa-line-strong); border-radius: 8px; background: var(--wa-input); overflow: hidden; }
+  .ha-code { position: relative; flex: 1 1 auto; min-height: 140px; border: 1px solid var(--wa-line-strong); border-radius: 10px; background: var(--wa-input); overflow: hidden; }
   .ha-code:focus-within { border-color: color-mix(in srgb, var(--wa-accent) 60%, var(--wa-line-strong)); }
   .ha-code pre, .ha-code textarea.ha-body-text {
     position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; margin: 0; box-sizing: border-box; border: 0; border-radius: 0; outline: none; box-shadow: none;
@@ -1322,7 +1322,7 @@ export const httpActionsViewStyles = css`
   .ha-code .j-var, pre.ha-snippet .j-var { color: var(--wa-val); }
 
   .ha-from-globals { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; font-size: 12px; color: var(--wa-muted); }
-  .ha-var { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; max-width: 760px; border: 1px solid var(--wa-line); border-radius: 8px; }
+  .ha-var { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; max-width: 760px; border: 1px solid var(--wa-line); border-radius: 10px; }
   .ha-var.unused { opacity: .75; }
   .ha-var-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 24px; }
   .ha-var-head code { font-size: 12.5px; font-weight: 600; }
@@ -1338,7 +1338,7 @@ export const httpActionsViewStyles = css`
   .ha-cap { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--wa-muted); }
   .ha-cap2 { font-size: 11.5px; font-weight: 600; color: var(--wa-muted); }
   .ha-status {
-    display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 6px; font-size: 12px; font-weight: 700;
+    display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 8px; font-size: 12px; font-weight: 700;
     font-variant-numeric: tabular-nums; border: 1px solid var(--wa-line-strong); color: var(--wa-ink);
   }
   .ha-status.ok { color: var(--wa-green); border-color: color-mix(in srgb, var(--wa-green) 55%, transparent); }

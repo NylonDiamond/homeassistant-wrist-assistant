@@ -836,7 +836,7 @@ export const roomsViewStyles = css`
   .rm-stack .field { grid-template-columns: minmax(0, 1fr); gap: 4px; padding: 2px 0; }
   .rm-stack .field.entity-field > :not(:first-child) { grid-column: 1; }
   .rm-card .field :is(input[type=text], input[type=number], select) {
-    height: 30px; min-height: 30px; padding: 0 9px; font-size: 13px; border-radius: 7px;
+    height: 30px; min-height: 30px; padding: 0 9px; font-size: 13px; border-radius: 9px;
     border-color: var(--wa-line-strong); background-color: var(--wa-field);
   }
   .rm-card .field.check { grid-template-columns: minmax(0, 1fr) auto; min-height: 30px; padding: 0; font-size: 13px; gap: 10px; }
@@ -872,7 +872,7 @@ export const roomsViewStyles = css`
   .rm-btn:disabled { opacity: .45; cursor: default; }
   .rm-btn svg.ui-icon { width: 13px; height: 13px; }
   select.rm-select {
-    min-width: 0; max-width: 100%; height: 30px; padding: 0 8px; border-radius: 7px; font: inherit; font-size: 13px;
+    min-width: 0; max-width: 100%; height: 30px; padding: 0 8px; border-radius: 9px; font: inherit; font-size: 13px;
     color: var(--wa-ink); background-color: var(--wa-field); border: 1px solid var(--wa-line-strong); cursor: pointer;
   }
   select.rm-select:focus-visible { outline: none; box-shadow: var(--wa-ring); }
@@ -1005,7 +1005,7 @@ export const roomsViewStyles = css`
   button.rm-area:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   .rm-add-room { display: flex; gap: 6px; max-width: 480px; }
   .rm-add-room input {
-    flex: 1 1 auto; min-width: 0; height: 32px; padding: 0 10px; border-radius: 8px;
+    flex: 1 1 auto; min-width: 0; height: 32px; padding: 0 10px; border-radius: 10px;
     border: 1px solid var(--wa-line-strong); background: var(--wa-field); color: var(--wa-ink); font: inherit; font-size: 13px;
   }
   .rm-add-room input:focus-visible { outline: none; border-color: var(--wa-accent); box-shadow: var(--wa-ring); }
@@ -1053,7 +1053,7 @@ export const roomsViewStyles = css`
   .rm-card .rm-heading-box input { width: 72px; }
   .rm-compass { font-size: 12px; color: var(--wa-muted); white-space: nowrap; }
   .rm-remove {
-    width: 28px; height: 28px; padding: 0; display: grid; place-items: center; border-radius: 6px;
+    width: 28px; height: 28px; padding: 0; display: grid; place-items: center; border-radius: 8px;
     border: 1px solid var(--wa-line-strong); background: transparent; color: var(--wa-muted); cursor: pointer;
   }
   .rm-remove:hover:not(:disabled) { background: var(--wa-panel); color: var(--wa-ink); }

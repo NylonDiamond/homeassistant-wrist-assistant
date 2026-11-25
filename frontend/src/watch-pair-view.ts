@@ -990,7 +990,7 @@ const pairNextStyles = css`
   .pair-next-title { margin: 4px 0 -4px; font-size: 11px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; color: var(--wa-ink); }
   .pair-next-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
   .pair-next-steps li {
-    display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; padding: 12px 14px; border-radius: 12px;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; padding: 12px 14px; border-radius: 14px;
     border: 1px solid var(--wa-line-strong); background: var(--wa-card);
   }
   .pair-next-steps li.first { border-color: color-mix(in srgb, var(--wa-green) 45%, var(--wa-line-strong)); }
@@ -1049,7 +1049,7 @@ export const pairCardStyles = css`
   .ws-pair-choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); gap: 12px; }
   .ws-pair button.ws-pair-choice {
     display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-height: 148px; box-sizing: border-box; padding: 16px;
-    border-radius: 12px; border: 1px solid var(--wa-line-strong); background: var(--wa-card); color: var(--wa-ink);
+    border-radius: 14px; border: 1px solid var(--wa-line-strong); background: var(--wa-card); color: var(--wa-ink);
     font: inherit; text-align: left; cursor: pointer; transition: border-color .12s ease-out, background-color .12s ease-out;
   }
   .ws-pair button.ws-pair-choice:hover { border-color: var(--wa-green); background: var(--wa-hover); }
@@ -1069,11 +1069,11 @@ export const pairCardStyles = css`
   .ws-pair button.small.ws-go:hover:not(:disabled) { border-color: var(--wa-green); background: var(--wa-hover); }
   .ws-pair-foot button.small.ws-go { min-height: 32px; padding: 0 14px; border-radius: 999px; }
   .ws-pair-found {
-    display: flex; align-items: center; gap: 14px; padding: 14px; margin-bottom: 8px; border-radius: 12px;
+    display: flex; align-items: center; gap: 14px; padding: 14px; margin-bottom: 8px; border-radius: 14px;
     border: 1px solid var(--wa-line-strong); background: color-mix(in srgb, var(--wa-bg) 45%, var(--wa-card));
   }
   .ws-pair-found-art {
-    flex: none; width: 48px; height: 56px; box-sizing: border-box; border-radius: 12px; display: grid; place-items: center;
+    flex: none; width: 48px; height: 56px; box-sizing: border-box; border-radius: 14px; display: grid; place-items: center;
     border: 1px solid var(--wa-line-strong); color: var(--wa-muted);
   }
   .ws-pair-found-art svg.ui-icon { width: 26px; height: 26px; }

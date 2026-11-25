@@ -864,7 +864,7 @@ export const smartSettingsStyles = css`
   .sm-line { display: flex; align-items: center; gap: 8px; padding: 2px 0 6px calc(var(--wa-lab) + 8px); font-size: 12px; }
   .sm-warn { color: var(--wa-warn, #c47f00); font-weight: 600; }
   .sm-none { color: var(--wa-muted); }
-  .sm-find { width: 100%; box-sizing: border-box; margin: 2px 0 4px; padding: 4px 8px; border: 1px solid var(--wa-line); border-radius: 6px;
+  .sm-find { width: 100%; box-sizing: border-box; margin: 2px 0 4px; padding: 4px 8px; border: 1px solid var(--wa-line); border-radius: 8px;
     background: var(--wa-field); color: var(--wa-ink); font: inherit; font-size: 12px; }
   .sm-pick { max-height: 240px; }
 
@@ -872,7 +872,7 @@ export const smartSettingsStyles = css`
   .sm-presets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 10px; }
   button.sm-preset {
     display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; padding: 10px 6px 8px;
-    border: 1px solid var(--wa-line); border-radius: 10px; background: var(--wa-raised, var(--wa-card)); color: var(--wa-ink);
+    border: 1px solid var(--wa-line); border-radius: 12px; background: var(--wa-raised, var(--wa-card)); color: var(--wa-ink);
     font: inherit; font-size: 12.5px; cursor: pointer;
   }
   button.sm-preset:hover:not(:disabled) { background: color-mix(in srgb, var(--wa-accent) 12%, var(--wa-card)); }

@@ -509,7 +509,7 @@ export const menuInspectorLookStyles = css`
   .mi-act-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
   .mi-act {
     display: flex; align-items: center; gap: 7px; min-width: 0; padding: 5px 7px; text-align: left;
-    border: 1px solid var(--wa-line-strong); border-radius: 9px; background: transparent;
+    border: 1px solid var(--wa-line-strong); border-radius: 12px; background: transparent;
     color: var(--wa-ink); font: inherit; font-size: 12px; line-height: 1.25; cursor: pointer;
     transition: background-color .12s ease-out, border-color .12s ease-out;
   }
@@ -522,7 +522,7 @@ export const menuInspectorLookStyles = css`
   .mi-act-name { overflow-wrap: anywhere; }
   .mi-act-why { flex-basis: 100%; font-size: 11px; font-weight: 400; color: var(--wa-muted); }
   .mi-desc {
-    margin: 4px 0 6px; padding: 7px 9px; border: 1px solid var(--wa-line); border-radius: 8px;
+    margin: 4px 0 6px; padding: 7px 9px; border: 1px solid var(--wa-line); border-radius: 10px;
     background: var(--wa-panel); color: var(--wa-label); font-size: 12px; line-height: 1.4;
   }
 

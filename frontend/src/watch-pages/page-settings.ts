@@ -643,7 +643,7 @@ export const pageSettingsStyles = css`
   .ps-theme {
     display: flex; flex-direction: column; align-items: stretch; gap: 5px; min-width: 0; padding: 5px; cursor: pointer;
     font: inherit; font-size: 10.5px; line-height: 1.25; color: var(--wa-muted); text-align: center;
-    background: var(--wa-card); border: 1px solid var(--wa-line-strong); border-radius: 8px;
+    background: var(--wa-card); border: 1px solid var(--wa-line-strong); border-radius: 10px;
   }
   .ps-theme:hover:not(:disabled) { background: var(--wa-panel); color: var(--wa-ink); }
   .ps-theme.on { background: var(--wa-sel-bg); border-color: var(--wa-sel-ring); color: var(--wa-ink); font-weight: 600; }

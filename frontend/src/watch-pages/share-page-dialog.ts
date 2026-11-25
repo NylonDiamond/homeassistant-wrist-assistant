@@ -107,7 +107,7 @@ export function openSharePageDialog(root: { querySelector?: (s: string) => Eleme
 export const sharePageDialogStyles = css`
   .lib-share-page .sp-lead, .lib-share-page .sp-note { margin: 0; font-size: 12.5px; line-height: 1.4; color: var(--wa-muted); }
   .lib-share-page .sp-text {
-    width: 100%; box-sizing: border-box; height: 180px; resize: vertical; padding: 8px; border-radius: 7px;
+    width: 100%; box-sizing: border-box; height: 180px; resize: vertical; padding: 8px; border-radius: 9px;
     border: 1px solid var(--wa-line-strong); font: 11.5px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--wa-ink);
     background: var(--wa-input, var(--wa-field));
   }

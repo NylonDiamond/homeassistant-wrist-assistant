@@ -900,7 +900,7 @@ export const addTileStyles = css`
 
   .at-links {
     display: flex; flex-direction: column; gap: 8px; padding: 10px;
-    border: 1px solid var(--wa-line); border-radius: 10px; background: var(--wa-raised, var(--wa-panel));
+    border: 1px solid var(--wa-line); border-radius: 12px; background: var(--wa-raised, var(--wa-panel));
   }
   .at-pages { display: flex; flex-direction: column; gap: 2px; max-height: 180px; overflow: auto; }
   .at-map-ask-foot { display: flex; justify-content: flex-end; gap: 8px; }
@@ -926,7 +926,7 @@ export const addTileStyles = css`
      letter typed. */
   .at-list {
     height: min(320px, 40vh); overflow: auto; overscroll-behavior: contain; padding: 4px;
-    border: 1px solid var(--wa-line); border-radius: 12px; background: var(--wa-raised, var(--wa-card));
+    border: 1px solid var(--wa-line); border-radius: 14px; background: var(--wa-raised, var(--wa-card));
   }
   .at-list button.ent { padding: 6px 8px; }
   .at-list button.ent .ent-right { max-width: 38%; }
@@ -957,7 +957,7 @@ export const addTileStyles = css`
   .at-kind-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); gap: 6px; }
   button.at-kind {
     display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 48px; padding: 7px 10px 7px 8px;
-    border: 1px solid var(--wa-line); border-radius: 10px; background: var(--wa-raised, var(--wa-card));
+    border: 1px solid var(--wa-line); border-radius: 12px; background: var(--wa-raised, var(--wa-card));
     color: var(--wa-ink); font: inherit; text-align: left; cursor: pointer;
     transition: background-color .1s ease-out, border-color .1s ease-out;
   }

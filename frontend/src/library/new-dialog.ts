@@ -232,7 +232,7 @@ export function openNewItemDialog(root: { querySelector?: (s: string) => Element
 export const newItemDialogStyles = css`
   dialog.lib-new {
     width: min(560px, calc(100vw - 32px)); padding: 0;
-    border: 1px solid var(--wa-line); border-radius: 12px;
+    border: 1px solid var(--wa-line); border-radius: 14px;
     background: var(--wa-card); color: var(--wa-ink);
     box-shadow: 0 12px 40px rgba(0,0,0,.4);
   }
@@ -275,7 +275,7 @@ export const newItemDialogStyles = css`
   .lib-new .new-step-title { font-size: 13px; font-weight: 700; color: var(--wa-ink); }
   .lib-new .new-step-hint { font-size: 11.5px; line-height: 1.35; color: var(--wa-muted); }
   .lib-new input.new-name {
-    width: 100%; box-sizing: border-box; height: 32px; padding: 0 10px; border-radius: 7px; border: 1px solid var(--wa-line-strong);
+    width: 100%; box-sizing: border-box; height: 32px; padding: 0 10px; border-radius: 9px; border: 1px solid var(--wa-line-strong);
     font: inherit; font-size: 14px; color: var(--wa-ink); background: var(--wa-input, var(--wa-field));
   }
   .lib-new input.new-name:focus-visible { outline: none; border-color: var(--wa-accent); box-shadow: var(--wa-ring); }
@@ -284,7 +284,7 @@ export const newItemDialogStyles = css`
     position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer;
     width: 150px; box-sizing: border-box; text-align: center;
     font: inherit; font-size: 11.5px; padding: 22px 8px 8px; color: var(--wa-muted);
-    border: 1px solid var(--wa-line); border-radius: 10px; background: var(--wa-raised, var(--wa-card));
+    border: 1px solid var(--wa-line); border-radius: 12px; background: var(--wa-raised, var(--wa-card));
     transition: border-color .12s ease-out, background-color .12s ease-out, color .12s ease-out;
   }
   .lib-new .shape-card:hover:not(:disabled) { border-color: var(--wa-line-strong); color: var(--wa-ink); }

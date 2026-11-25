@@ -1834,7 +1834,7 @@ export const watchSettingsStyles = css`
      hairline), with the info mark in the accent. */
   .ws-top > .ws-new {
     display: flex; align-items: center; gap: 10px; box-sizing: border-box; width: min(1088px, calc(100% - 32px)); margin: 10px auto 0;
-    padding: 10px 14px; border: 1px solid var(--wa-line); border-radius: 8px; background: var(--wa-panel); font-size: 13px;
+    padding: 10px 14px; border: 1px solid var(--wa-line); border-radius: 10px; background: var(--wa-panel); font-size: 13px;
   }
   .ws-top > .ws-new > svg.ui-icon { width: 16px; height: 16px; flex: none; color: var(--wa-accent); }
   .ws-top > .ws-new > span { flex: 1; min-width: 0; }
@@ -1864,7 +1864,7 @@ export const watchSettingsStyles = css`
   .ws-nav { flex: 0 0 248px; min-width: 0; display: flex; flex-direction: column; gap: 10px; position: sticky; top: 64px; }
   .ws-search {
     display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 10px; box-sizing: border-box;
-    border: 1px solid var(--wa-line-strong); border-radius: 8px; background: var(--wa-field); color: var(--wa-muted);
+    border: 1px solid var(--wa-line-strong); border-radius: 10px; background: var(--wa-field); color: var(--wa-muted);
   }
   .ws-search:focus-within { border-color: color-mix(in srgb, var(--wa-ink) 45%, var(--wa-line-strong)); }
   .ws-search svg { width: 15px; height: 15px; flex: none; }
@@ -1968,7 +1968,7 @@ export const watchSettingsStyles = css`
      hue. Five at most to a line, three on a narrow column. */
   .ws-tiles {
     display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); gap: 1px; margin: 8px 0 0 36px;
-    border: 1px solid var(--wa-line-strong); border-radius: 8px; overflow: hidden; background: var(--wa-line-strong);
+    border: 1px solid var(--wa-line-strong); border-radius: 12px; overflow: hidden; background: var(--wa-line-strong);
   }
   @container xfer (max-width: 440px) {
     .ws-tiles { grid-template-columns: repeat(var(--cols-narrow, 3), minmax(0, 1fr)); margin-left: 0; }
@@ -2022,7 +2022,7 @@ export const watchSettingsStyles = css`
      the form under them at the row's full width. */
   .ws-addr-row > .ws-addr-t { grid-column: 2 / -1; grid-row: 1; color: var(--wa-ink); font-size: 13.5px; font-weight: 500; }
   .ws-addr-row > .ws-addr-body { grid-column: 2 / -1; grid-row: 3; margin-top: 8px; }
-  .ws-addr-row > .ws-addr-body > .addr-sum { padding: 8px 8px 8px 12px; border: 1px solid var(--wa-line); border-radius: 10px; background: var(--wa-field); }
+  .ws-addr-row > .ws-addr-body > .addr-sum { padding: 8px 8px 8px 12px; border: 1px solid var(--wa-line); border-radius: 12px; background: var(--wa-field); }
   @container xfer (max-width: 440px) {
     .ws-addr-row > .ws-addr-body { grid-column: 1 / -1; }
   }

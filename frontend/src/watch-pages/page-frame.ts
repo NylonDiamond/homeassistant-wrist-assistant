@@ -269,7 +269,7 @@ export const pageFrameStyles = css`
   .pe-bar-on .lt-fold-pop .lt-chip { height: 26px; }
   /* An untick's question and a refusal hang under the bar, over the stage. */
   .pe-bar-on :is(.lt-ask, .lt-note) { position: absolute; top: calc(100% + 10px); left: 0; z-index: 45; width: max-content; max-width: min(460px, 80vw); }
-  .pe-bar-on .lt-note { padding: 7px 10px; border-radius: 8px; background: var(--wa-card); box-shadow: inset 0 0 0 1px var(--wa-line-strong), var(--wa-shadow-pop); }
+  .pe-bar-on .lt-note { padding: 7px 10px; border-radius: 10px; background: var(--wa-card); box-shadow: inset 0 0 0 1px var(--wa-line-strong), var(--wa-shadow-pop); }
   .pe-bar-on .pe-lib-hint { max-width: 280px; font-size: 12px; line-height: 1.3; color: var(--wa-muted); }
   /* The ring says which device the editor came from; the chip's tooltip says
      it in words. */
@@ -291,7 +291,7 @@ export const pageFrameStyles = css`
   .pe-pp-wrap { position: relative; flex: none; }
   .pe-pp {
     display: inline-grid; place-items: center; width: 30px; height: 30px; margin: 0; padding: 0;
-    border: 1px solid var(--wa-line-strong); border-radius: 7px;
+    border: 1px solid var(--wa-line-strong); border-radius: 9px;
     background: var(--wa-card); color: var(--wa-label, var(--wa-ink)); cursor: pointer;
   }
   .pe-pp svg.ui-icon { width: 15px; height: 15px; }
@@ -318,7 +318,7 @@ export const pageFrameStyles = css`
   .pe-pp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
   .pe-pp-card {
     position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; margin: 0;
-    padding: 14px 8px 10px; border: 1px solid var(--wa-line); border-radius: 12px;
+    padding: 14px 8px 10px; border: 1px solid var(--wa-line); border-radius: 14px;
     background: var(--wa-panel); color: var(--wa-ink); font: inherit; cursor: pointer;
   }
   .pe-pp-card:hover:not(:disabled) { border-color: var(--wa-accent); }
@@ -374,12 +374,12 @@ export const pageFrameStyles = css`
      and in blue with a soft glow of its own color, so it is found first. */
   .pe-stage-add {
     display: inline-flex; align-items: center; justify-content: center; gap: 7px; flex: none;
-    margin: 0; padding: 9px 20px 9px 16px; border: 0; border-radius: 10px;
-    background: var(--wa-hue-blue); color: var(--wa-chip-ink); font: inherit; font-size: 14px; font-weight: 600; line-height: 18px; cursor: pointer;
-    box-shadow: 0 4px 18px color-mix(in srgb, var(--wa-hue-blue) 40%, transparent);
+    margin: 0; padding: 9px 20px 9px 16px; border: 0; border-radius: 999px;
+    background: var(--wa-primary-bg); color: var(--wa-primary-ink); font: inherit; font-size: 14px; font-weight: 600; line-height: 18px; cursor: pointer;
+    box-shadow: 0 4px 18px color-mix(in srgb, var(--wa-primary-bg) 35%, transparent);
   }
-  .pe-stage-add:hover:not(:disabled) { background: color-mix(in srgb, var(--wa-hue-blue) 88%, #000); }
-  .pe-stage-add:focus-visible { outline: none; box-shadow: var(--wa-ring), 0 4px 18px color-mix(in srgb, var(--wa-hue-blue) 40%, transparent); }
+  .pe-stage-add:hover:not(:disabled) { background: color-mix(in srgb, var(--wa-primary-bg) 88%, #000); }
+  .pe-stage-add:focus-visible { outline: none; box-shadow: var(--wa-ring), 0 4px 18px color-mix(in srgb, var(--wa-primary-bg) 35%, transparent); }
   .pe-stage-add:disabled { opacity: .5; cursor: default; box-shadow: none; }
   .pe-stage-add svg.ui-icon { width: 16px; height: 16px; }
 

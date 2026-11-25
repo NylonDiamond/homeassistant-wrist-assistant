@@ -113,13 +113,13 @@ function renderDeviceSwitch(input: DeviceSwitchInput): TemplateResult {
 export const devicesMenuStyles = css`
   .pk-dup-menu {
     display: flex; flex-direction: column; gap: 4px; padding: 8px; cursor: default;
-    border: 1px solid var(--wa-line-strong); border-radius: 10px;
+    border: 1px solid var(--wa-line-strong); border-radius: 12px;
     background: var(--wa-card); box-shadow: var(--wa-shadow-pop); text-align: left;
   }
   .pk-dup-row {
     display: flex; align-items: center; gap: 7px; width: 100%; text-align: left; cursor: pointer;
     font: inherit; font-size: 12px; color: var(--wa-ink);
-    padding: 5px 7px; border: 1px solid var(--wa-line); border-radius: 7px; background: var(--wa-card);
+    padding: 5px 7px; border: 1px solid var(--wa-line); border-radius: 9px; background: var(--wa-card);
   }
   .pk-dup-row svg { flex: none; width: 14px; height: 14px; }
   .pk-dup-row.check { padding: 0; gap: 0; cursor: default; }

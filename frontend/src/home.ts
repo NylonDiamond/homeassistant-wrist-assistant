@@ -626,7 +626,7 @@ export const homeStyles = css`
   .home-devices > li:has(> button.home-device-add) { display: flex; }
   button.home-device-add {
     flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; min-height: 120px;
-    box-sizing: border-box; padding: 16px; border-radius: 12px; font: inherit; cursor: pointer;
+    box-sizing: border-box; padding: 16px; border-radius: 14px; font: inherit; cursor: pointer;
     color: var(--wa-muted); background: transparent; border: 1.5px dashed var(--wa-line-strong);
   }
   button.home-device-add:hover { color: var(--wa-ink); border-color: var(--wa-muted); background: var(--wa-hover); }
@@ -720,7 +720,7 @@ export const homeStyles = css`
     box-shadow: var(--home-lift);
   }
   .hb-icon {
-    width: 38px; height: 38px; flex: none; box-sizing: border-box; border-radius: 9px;
+    width: 38px; height: 38px; flex: none; box-sizing: border-box; border-radius: 12px;
     display: grid; place-items: center; background: var(--wa-field); border: 1px solid var(--wa-line);
   }
   /* The device's own color (device-colors.ts) on its drawing's box. */
@@ -826,7 +826,7 @@ export const homeStyles = css`
      pages; this row only says which device it is (Jesse, 2026-10-23). */
   .hb-hero { flex: 1 1 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; }
   .hb-stage {
-    position: relative; flex: none; width: 46px; height: 46px; border-radius: 11px; overflow: hidden; box-sizing: border-box;
+    position: relative; flex: none; width: 46px; height: 46px; border-radius: 14px; overflow: hidden; box-sizing: border-box;
     border: 1px solid transparent;
     background:
       radial-gradient(46% 70% at 50% 0%, var(--wa-stage-light) 0%, transparent 80%) padding-box,
@@ -892,7 +892,7 @@ export const homeStyles = css`
   .hw-install-t { flex: 1 1 360px; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
   .hw-install-t p { margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--wa-ink); overflow-wrap: anywhere; }
   .hw-qr { flex: none; margin: 0; display: flex; align-items: center; gap: 14px; }
-  .hw-qr svg, .hw-qr-empty { display: block; width: 96px; height: 96px; box-sizing: border-box; border-radius: 8px; border: 1px solid var(--wa-line); }
+  .hw-qr svg, .hw-qr-empty { display: block; width: 96px; height: 96px; box-sizing: border-box; border-radius: 10px; border: 1px solid var(--wa-line); }
   .hw-qr figcaption { display: flex; flex-direction: column; gap: 3px; max-width: 150px; font-size: 11.5px; line-height: 1.4; color: var(--wa-muted); }
   .hw-qr figcaption b { font-size: 12.5px; font-weight: 500; color: var(--wa-ink); }
   /* Pick one: both devices on Home's lit stage, its edge plain grey. The one
@@ -959,7 +959,7 @@ export const homeStyles = css`
      open. */
   .hb-addrs { min-width: 0; }
   .hb-addrs:not(.editing) {
-    padding: 9px 10px 9px 14px; border: 1px solid var(--wa-line); border-radius: 12px; background: var(--home-card, var(--wa-card));
+    padding: 9px 10px 9px 14px; border: 1px solid var(--wa-line); border-radius: 14px; background: var(--home-card, var(--wa-card));
   }
   .hb-name { display: flex; flex-direction: column; gap: 1px; padding: 0 2px; min-width: 0; }
   .hb-name h2 { margin: 0; font-family: var(--wa-head-font, inherit); font-size: 26px; font-weight: 500; letter-spacing: -.012em; line-height: 1.15; overflow-wrap: anywhere; }
@@ -1031,7 +1031,7 @@ export const homeStyles = css`
     overflow: hidden; pointer-events: none;
   }
   .hb-comp {
-    flex: none; display: block; height: var(--hb-comp-h); box-sizing: border-box; border-radius: 6px;
+    flex: none; display: block; height: var(--hb-comp-h); box-sizing: border-box; border-radius: 8px;
     background-color: var(--wa-art-screen); background-repeat: no-repeat; background-position: center; background-size: contain;
     box-shadow: 0 0 0 1px var(--wa-line-strong);
   }

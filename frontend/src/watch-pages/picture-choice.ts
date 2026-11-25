@@ -576,7 +576,7 @@ export const pictureChoiceStyles = css`
   /* Light options: a hairline, small words, the picture doing the talking. */
   .pc-opt {
     display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; padding: 4px 5px 5px;
-    border: 1px solid color-mix(in srgb, var(--wa-line) 75%, transparent); border-radius: 9px; background: transparent; color: var(--wa-muted);
+    border: 1px solid color-mix(in srgb, var(--wa-line) 75%, transparent); border-radius: 12px; background: transparent; color: var(--wa-muted);
     font: inherit; cursor: pointer;
   }
   .pc-opt:hover:not(:disabled) { color: var(--wa-ink); }
@@ -652,7 +652,7 @@ export const pictureChoiceStyles = css`
   .pc-chev svg { width: 12px; height: 12px; }
   .pc-menu-list {
     display: flex; flex-direction: column; max-height: 240px; overflow-y: auto; padding: 4px; scrollbar-width: thin;
-    border: 1px solid var(--wa-line-strong); border-radius: 8px; background: var(--wa-card);
+    border: 1px solid var(--wa-line-strong); border-radius: 10px; background: var(--wa-card);
   }
   .pc-menu-opt {
     padding: 5px 8px; border: 0; border-radius: 6px; background: transparent; color: var(--wa-ink);

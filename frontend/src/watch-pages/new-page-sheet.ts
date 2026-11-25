@@ -487,7 +487,7 @@ export const newPageSheetStyles = css`
   .np-starts { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px; }
   .np-start {
     display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 8px 9px; text-align: left; cursor: pointer;
-    font: inherit; border-radius: 9px; border: 1px solid var(--wa-line); background: var(--wa-raised, var(--wa-card)); color: var(--wa-muted);
+    font: inherit; border-radius: 12px; border: 1px solid var(--wa-line); background: var(--wa-raised, var(--wa-card)); color: var(--wa-muted);
   }
   .np-start svg { width: 18px; height: 18px; }
   .np-start:hover:not(:disabled) { border-color: var(--wa-line-strong); color: var(--wa-ink); }
@@ -498,7 +498,7 @@ export const newPageSheetStyles = css`
   .np-start-n { font-size: 10.5px; line-height: 1.3; }
   .np-area { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--wa-muted); }
   .np-area select {
-    flex: 1; min-width: 0; height: 30px; padding: 0 8px; border-radius: 7px; border: 1px solid var(--wa-line-strong);
+    flex: 1; min-width: 0; height: 30px; padding: 0 8px; border-radius: 9px; border: 1px solid var(--wa-line-strong);
     font: inherit; font-size: 13px; color: var(--wa-ink); background: var(--wa-input, var(--wa-field));
   }
   .np-room { display: flex; flex-direction: column; gap: 1px; max-height: 240px; overflow-y: auto; padding-right: 4px; }
@@ -506,7 +506,7 @@ export const newPageSheetStyles = css`
   .np-none { margin: 0; font-size: 12.5px; line-height: 1.4; color: var(--wa-muted); }
   .np-bad { color: var(--wa-danger, #d33); }
   .np-paste {
-    width: 100%; box-sizing: border-box; min-height: 96px; max-height: 200px; resize: vertical; padding: 8px; border-radius: 7px;
+    width: 100%; box-sizing: border-box; min-height: 96px; max-height: 200px; resize: vertical; padding: 8px; border-radius: 9px;
     border: 1px solid var(--wa-line-strong); font: 11.5px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--wa-ink);
     background: var(--wa-input, var(--wa-field));
   }
@@ -516,7 +516,7 @@ export const newPageSheetStyles = css`
   .np-miss { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; gap: 8px; font-size: 12.5px; }
   .np-miss-n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .np-miss select {
-    min-width: 0; height: 28px; padding: 0 6px; border-radius: 7px; border: 1px solid var(--wa-line-strong);
+    min-width: 0; height: 28px; padding: 0 6px; border-radius: 9px; border: 1px solid var(--wa-line-strong);
     font: inherit; font-size: 12.5px; color: var(--wa-ink); background: var(--wa-input, var(--wa-field));
   }
 `;

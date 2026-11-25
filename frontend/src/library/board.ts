@@ -917,7 +917,7 @@ export const boardStyles = css`
   /* One action on every column: bring this device to the front. */
   .bd-focus-pill {
     display: inline-flex; align-items: center; gap: 4px; height: 21px; padding: 0 8px 0 6px; box-sizing: border-box; flex: none;
-    border-radius: 11px; border: 1px solid var(--wa-line-strong); background: none; font: inherit; font-size: 11.5px; font-weight: 600;
+    border-radius: 14px; border: 1px solid var(--wa-line-strong); background: none; font: inherit; font-size: 11.5px; font-weight: 600;
     color: var(--wa-ink); cursor: pointer; white-space: nowrap;
   }
   .bd-focus-pill .bd-i { width: 12px; height: 12px; }
@@ -937,7 +937,7 @@ export const boardStyles = css`
      many devices are past it and goes there. */
   .bd-more {
     position: absolute; right: 4px; bottom: 11px; z-index: 3; display: inline-flex; align-items: center; gap: 4px; height: 23px; padding: 0 8px;
-    border-radius: 12px; border: 1px solid var(--wa-line-strong); background: var(--wa-panel, var(--wa-card)); color: var(--wa-ink);
+    border-radius: 14px; border: 1px solid var(--wa-line-strong); background: var(--wa-panel, var(--wa-card)); color: var(--wa-ink);
     font: inherit; font-size: 11.5px; font-weight: 600; white-space: nowrap; cursor: pointer;
     box-shadow: -12px 0 12px var(--wa-card);
   }
@@ -1125,7 +1125,7 @@ export const boardStyles = css`
   /* A focused device's head, over the board, in the device's color. */
   .bd-focus {
     display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 0 0 10px; padding: 10px 12px;
-    border-radius: 10px; border: 1px solid color-mix(in srgb, var(--dc, var(--wa-accent)) 45%, var(--wa-line));
+    border-radius: 12px; border: 1px solid color-mix(in srgb, var(--dc, var(--wa-accent)) 45%, var(--wa-line));
     background: color-mix(in srgb, var(--dc, var(--wa-accent)) 8%, var(--wa-card));
   }
   .bd-focus-glyph { display: inline-flex; color: var(--dc, var(--wa-muted)); }
@@ -1141,7 +1141,7 @@ export const boardStyles = css`
   .bd-link:hover { text-decoration-color: currentColor; }
   .bd-link:focus-visible { outline: none; box-shadow: var(--wa-ring); border-radius: 3px; }
   .bd-focus-all {
-    display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px; border-radius: 7px;
+    display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px; border-radius: 9px;
     border: 1px solid var(--wa-line-strong); background: var(--wa-card); color: var(--wa-ink);
     font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
   }
@@ -1157,7 +1157,7 @@ export const boardStyles = css`
      both scrollers, or they would cut these off. */
   .bd-peek {
     position: fixed; z-index: 40; width: 226px; padding: 12px; box-sizing: border-box; pointer-events: none;
-    border-radius: 12px; border: 1px solid var(--wa-line-strong); background: var(--wa-card);
+    border-radius: 14px; border: 1px solid var(--wa-line-strong); background: var(--wa-card);
     box-shadow: var(--wa-shadow-pop, 0 18px 44px rgba(0, 0, 0, .5));
   }
   .bd-peek[hidden], .bd-pop[hidden] { display: none; }
@@ -1169,7 +1169,7 @@ export const boardStyles = css`
   .bd-peek-k { margin-top: 3px; font-size: 11px; color: var(--wa-muted); opacity: .75; }
   .bd-pop {
     position: fixed; z-index: 40; min-width: 150px; max-width: 280px; padding: 4px; box-sizing: border-box;
-    border-radius: 9px; border: 1px solid var(--wa-line-strong); background: var(--wa-card);
+    border-radius: 12px; border: 1px solid var(--wa-line-strong); background: var(--wa-card);
     box-shadow: var(--wa-shadow-pop, 0 8px 24px rgba(0, 0, 0, .35));
   }
   .bd-pop-item {

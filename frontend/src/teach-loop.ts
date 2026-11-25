@@ -364,7 +364,7 @@ export const teachStyles = css`
   }
   .tl-step b { font-weight: 600; }
   .tl-tip { margin: -4px 0 12px 10px; font-size: 12px; color: var(--wa-muted); }
-  .tl-kinds { border: 1px solid var(--wa-line); border-radius: 10px; margin: 0 0 12px; }
+  .tl-kinds { border: 1px solid var(--wa-line); border-radius: 12px; margin: 0 0 12px; }
   .tl-kind { display: grid; grid-template-columns: 76px 1fr; gap: 8px; padding: 6px 10px; font-size: 12px; color: var(--wa-label); }
   .tl-kind + .tl-kind { border-top: 1px solid var(--wa-line); }
   .tl-kind b { color: var(--wa-ink); font-weight: 600; }

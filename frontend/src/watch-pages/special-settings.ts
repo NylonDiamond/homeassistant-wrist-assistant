@@ -959,7 +959,7 @@ export const specialSettingsStyles = css`
   .sp-faint { color: var(--wa-muted); font-size: 11.5px; font-weight: 400; }
   .sp-indent { padding-left: calc(var(--wa-lab) + 8px); }
   .sp-card { display: flex; flex-direction: column; gap: 2px; margin: 4px 0; padding: 6px 8px;
-    border: 1px solid var(--wa-line); border-radius: 8px; --wa-lab: 70px; }
+    border: 1px solid var(--wa-line); border-radius: 10px; --wa-lab: 70px; }
   .sp-card-h { display: flex; align-items: center; gap: 6px; min-width: 0; }
   .sp-name { flex: 1; min-width: 0; font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sp-card-h .sp-faint { flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -977,7 +977,7 @@ export const specialSettingsStyles = css`
 
   .sp-layout { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px 0; }
   .sp-slot { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 44px;
-    padding: 4px 2px; border: 1px solid var(--wa-line); border-radius: 10px; background: #1c1c1e; color: #fff; font: inherit;
+    padding: 4px 2px; border: 1px solid var(--wa-line); border-radius: 12px; background: #1c1c1e; color: #fff; font: inherit;
     font-size: 10.5px; cursor: pointer; }
   .sp-slot.empty { background: transparent; border-style: dashed; }
   .sp-slot.dim { opacity: .55; }
@@ -993,7 +993,7 @@ export const specialSettingsStyles = css`
   .sp-pad-field { align-items: center; }
   .sp-pad-row { display: flex; align-items: center; gap: 10px; }
   .sp-pad { display: grid; grid-template-columns: repeat(3, 24px); grid-template-rows: repeat(3, 24px); gap: 2px; }
-  .sp-pad button { display: grid; place-items: center; padding: 0; border: 1px solid var(--wa-line); border-radius: 6px;
+  .sp-pad button { display: grid; place-items: center; padding: 0; border: 1px solid var(--wa-line); border-radius: 8px;
     background: var(--wa-field); color: var(--wa-ink); cursor: pointer; }
   .sp-pad button:hover { background: var(--wa-panel); }
   .sp-pad button svg.ui-icon { width: 13px; height: 13px; }

@@ -68,7 +68,7 @@ export const editorStyles = css`
   .hme-tb, .hme-menu {
     height: 30px;
     padding: 0 12px;
-    border-radius: 8px;
+    border-radius: 10px;
     border: 1px solid var(--wa-line-strong);
     background: var(--wa-card);
     color: var(--wa-soft);
@@ -146,7 +146,7 @@ export const editorStyles = css`
   .hme-back:hover { color: var(--wa-ink); }
   .hme-vsep { width: 1px; height: 22px; background: var(--wa-line-strong); flex: none; }
   .hme-title { font-size: 15px; }
-  .hme-beta { font-size: 10px; border: 1px solid var(--wa-line-strong); border-radius: 6px; padding: 1px 6px; color: var(--wa-muted); letter-spacing: 0.06em; }
+  .hme-beta { font-size: 10px; border: 1px solid var(--wa-line-strong); border-radius: 8px; padding: 1px 6px; color: var(--wa-muted); letter-spacing: 0.06em; }
   .hme-flex { flex: 1 1 0; min-width: 0; }
   .hme-floor-wrap { position: relative; }
   .hme-tb.hme-floor-btn { height: 38px; padding: 0 12px 0 8px; gap: 10px; }
@@ -172,7 +172,7 @@ export const editorStyles = css`
     /* Never wider than the editor: the host is an inline-size container. */
     min-width: min(320px, calc(100cqw - 32px)); max-width: calc(100cqw - 32px); box-sizing: border-box;
     display: flex; flex-direction: column; gap: 2px;
-    background: var(--wa-card); border: 1px solid var(--wa-line-strong); border-radius: 12px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+    background: var(--wa-card); border: 1px solid var(--wa-line-strong); border-radius: 14px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
   }
   /* On a phone the floor button sits well in from the left, so the menu
      hangs from the whole bar instead, 16 px in from each side. */
@@ -189,13 +189,13 @@ export const editorStyles = css`
   .hme-pop-act:hover:not(:disabled) { background: var(--wa-hover); color: var(--wa-ink); }
   .hme-pop-act.danger:hover:not(:disabled) { color: var(--wa-need); }
   .hme-pop-act:disabled { opacity: 0.4; cursor: default; }
-  .hme-pop-add { margin-top: 4px; border: 1px dashed var(--wa-line-strong); background: none; color: var(--wa-soft); font: inherit; height: 34px; border-radius: 8px; cursor: pointer; }
+  .hme-pop-add { margin-top: 4px; border: 1px dashed var(--wa-line-strong); background: none; color: var(--wa-soft); font: inherit; height: 34px; border-radius: 10px; cursor: pointer; }
   .hme-pop-add:hover { background: var(--wa-hover); color: var(--wa-ink); }
   svg.hme-thumb { display: block; flex: none; }
 
   .hme-note {
     display: flex; align-items: center; gap: 10px; margin: 10px 12px 0; padding: 10px 12px; font-size: 13px;
-    border-radius: 12px; border: 1px solid var(--wa-line); background: var(--wa-card);
+    border-radius: 14px; border: 1px solid var(--wa-line); background: var(--wa-card);
   }
   .hme-note > span { flex: 1; min-width: 0; }
   .hme-note.warn { border-color: var(--wa-amber-line, var(--hme-amber)); background: var(--wa-amber-bg, var(--wa-card)); }
@@ -220,7 +220,7 @@ export const editorStyles = css`
   .hme-row-end { display: flex; gap: 8px; padding-top: 4px; flex-wrap: wrap; align-items: center; }
   .hme-row-end.indent { padding-left: 102px; }
   .hme-in {
-    flex: 1; min-width: 0; height: 32px; border-radius: 8px; border: 1px solid var(--wa-line); background: var(--wa-input);
+    flex: 1; min-width: 0; height: 32px; border-radius: 10px; border: 1px solid var(--wa-line); background: var(--wa-input);
     color: var(--wa-ink); display: flex; align-items: center; padding: 0 10px; gap: 4px;
   }
   .hme-in:focus-within { border-color: var(--hme-sel); }
@@ -274,7 +274,7 @@ export const editorStyles = css`
   .hme-pics { display: flex; gap: 10px; flex-wrap: wrap; }
   .hme-pic { display: flex; flex-direction: column; align-items: center; gap: 5px; font: inherit; font-size: 11px; color: var(--wa-muted); border: 0; background: none; padding: 0; cursor: pointer; max-width: 72px; text-align: center; }
   .hme-pic > svg { border-radius: 8px; border: 1px solid #3a3a3c; background: #1f1f21; display: block; }
-  .hme-sw { width: 52px; height: 38px; border-radius: 8px; border: 1px solid var(--wa-line-strong); display: block; }
+  .hme-sw { width: 52px; height: 38px; border-radius: 10px; border: 1px solid var(--wa-line-strong); display: block; }
   .hme-pic:hover { color: var(--wa-ink); }
   .hme-pic.on { color: var(--wa-ink); }
   .hme-pic.on > svg, .hme-pic.on > .hme-sw { outline: 2px solid var(--hme-sel); outline-offset: 2px; }
@@ -325,7 +325,7 @@ export const editorStyles = css`
   .hme-step-quiet .hme-link { font-size: 12px; margin: 0 0 0 2px; }
   /* On a page: each watch and iPhone, what it gets, and Add page. */
   .hme-pagerows { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; align-self: stretch; }
-  .hme-pagerow { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; background: var(--wa-input); border: 1px solid var(--wa-line); }
+  .hme-pagerow { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 12px; background: var(--wa-input); border: 1px solid var(--wa-line); }
   .hme-pagerow-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
   .hme-pagerow-t b { font-size: 13px; font-weight: 600; color: var(--wa-ink); }
   .hme-pagerow-t > span { color: var(--wa-muted); font-size: 11.5px; line-height: 1.35; }
@@ -335,7 +335,7 @@ export const editorStyles = css`
   /* A picked room's strip of the checklist: three cells, the active one
      tinted. */
   .hme-strip {
-    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px; border-radius: 12px; flex: none;
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px; border-radius: 14px; flex: none;
     border: 1px solid var(--wa-line); background: var(--wa-card); font: inherit; text-align: left; cursor: pointer;
   }
   .hme-strip:focus-visible { outline: none; box-shadow: var(--wa-ring, 0 0 0 2px var(--hme-sel)); }
@@ -400,7 +400,7 @@ export const editorStyles = css`
   .hme-inroom .hme-tb.hme-wide { margin-top: 2px; }
 
   /* ── lists ────────────────────────────────────────────────────────── */
-  .hme-find { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--wa-line); background: var(--wa-input); color: var(--wa-faint); flex: none; }
+  .hme-find { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--wa-line); background: var(--wa-input); color: var(--wa-faint); flex: none; }
   .hme-find:focus-within { border-color: var(--hme-sel); }
   .hme-find input { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--wa-ink); font: inherit; outline: none; }
   .hme-layers { padding: 10px 8px; gap: 2px; }
@@ -436,7 +436,7 @@ export const editorStyles = css`
   .hme-tool.on { background: var(--hme-sel-bg); color: var(--wa-ink); }
   .hme-tool > svg { flex: 0 0 18px; }
   .hme-tool kbd { margin-left: auto; font: 500 11px var(--hme-mono); color: var(--wa-faint); border: 1px solid var(--wa-line-strong); border-radius: 5px; padding: 1px 5px; }
-  .hme-fix { display: flex; gap: 10px; align-items: flex-start; padding: 10px; border-radius: 10px; background: var(--wa-input); border: 1px solid var(--wa-line); }
+  .hme-fix { display: flex; gap: 10px; align-items: flex-start; padding: 10px; border-radius: 12px; background: var(--wa-input); border: 1px solid var(--wa-line); }
   .hme-fix p { font-size: 12.5px; line-height: 1.4; color: var(--wa-soft); flex: 1; cursor: pointer; }
   .hme-fix b { color: var(--wa-ink); font-weight: 600; }
   .hme-fix-dot { width: 8px; height: 8px; margin-top: 5px; border-radius: 50%; background: var(--hme-amber); flex: none; }
@@ -614,7 +614,7 @@ export const editorStyles = css`
   .hme-tray-row.armed { border-color: var(--hme-sel); background: var(--hme-sel-bg); }
   .hme-tb.hme-blink { height: 24px; padding: 0 8px; font-size: 11.5px; flex: none; }
   .hme-tray-more {
-    display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 32px; padding: 0 10px; border-radius: 9px;
+    display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 32px; padding: 0 10px; border-radius: 12px;
     border: 1px dashed var(--wa-line-strong); background: none; color: var(--wa-soft); font: inherit; font-size: 12.5px; cursor: pointer; text-align: left;
   }
   .hme-tray-more:hover { color: var(--wa-ink); border-color: var(--hme-sel); }
@@ -632,7 +632,7 @@ export const editorStyles = css`
   .hme-ar.dim { color: var(--wa-faint); }
   .hme-ar > span { margin-left: auto; font-weight: 500; color: var(--wa-faint); }
   .hme-dv {
-    display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 4px 8px; border-radius: 9px;
+    display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 4px 8px; border-radius: 12px;
     background: var(--wa-input); border: 1px solid var(--wa-line); cursor: grab; flex: none; outline: none;
   }
   .hme-dv:hover { border-color: var(--wa-line-strong); }
@@ -645,7 +645,7 @@ export const editorStyles = css`
   .hme-dv-grip { color: var(--wa-faint); font-size: 13px; }
   /* A light's "2 on map": a click picks the next one in turn. */
   .hme-dv-count {
-    flex: none; height: 22px; padding: 0 8px; border-radius: 11px; border: 1px solid var(--wa-line-strong); background: var(--wa-raise);
+    flex: none; height: 22px; padding: 0 8px; border-radius: 14px; border: 1px solid var(--wa-line-strong); background: var(--wa-raise);
     color: var(--wa-soft); font: inherit; font-size: 11px; font-weight: 600; cursor: pointer; white-space: nowrap;
   }
   .hme-dv-count:hover { color: var(--wa-ink); border-color: var(--hme-sel); }
@@ -663,7 +663,7 @@ export const editorStyles = css`
   .hme-lampc-t span { color: var(--wa-muted); font-size: 12px; }
   .hme-lampc-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
   .hme-lampc-b {
-    display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 4px 3px 6px; border-radius: 10px; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 4px 3px 6px; border-radius: 12px; cursor: pointer;
     border: 1px solid var(--wa-line); background: var(--wa-input); color: var(--wa-soft); font: inherit; font-size: 11px; text-align: center;
   }
   .hme-lampc-b:hover:not(:disabled) { border-color: var(--wa-line-strong); color: var(--wa-ink); }
@@ -683,7 +683,7 @@ export const editorStyles = css`
   .hme-state { color: var(--wa-soft); font-weight: 600; white-space: nowrap; }
   .hme-state.lit { color: #e6a52e; }
   .hme-in.hme-icon-btn { font: inherit; font-size: 13px; text-align: left; cursor: pointer; gap: 8px; color: var(--wa-ink); }
-  .hme-icons { display: grid; grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); gap: 4px; padding: 6px; border-radius: 10px; border: 1px solid var(--wa-line); background: var(--wa-input); }
+  .hme-icons { display: grid; grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); gap: 4px; padding: 6px; border-radius: 12px; border: 1px solid var(--wa-line); background: var(--wa-input); }
   .hme-icon-cell {
     display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 4px; border-radius: 8px; border: 1px solid transparent;
     background: none; color: var(--wa-soft); font: inherit; font-size: 10.5px; cursor: pointer; text-align: center;
@@ -725,7 +725,7 @@ export const editorStyles = css`
     display: flex; flex-direction: column; gap: 6px; border: 0; background: none; padding: 6px; border-radius: 12px; cursor: pointer;
     color: var(--wa-muted); font: inherit; font-size: 12px; font-weight: 500; text-align: left; min-width: 0;
   }
-  .hme-look > svg { width: 100%; height: auto; aspect-ratio: 112 / 68; border-radius: 9px; border: 1px solid var(--wa-line); display: block; }
+  .hme-look > svg { width: 100%; height: auto; aspect-ratio: 112 / 68; border-radius: 12px; border: 1px solid var(--wa-line); display: block; }
   .hme-look:hover { background: var(--wa-card); }
   .hme-look.on { background: var(--wa-raise); color: var(--wa-ink); }
   .hme-look.on > svg { outline: 2px solid var(--hme-sel); outline-offset: 2px; }
@@ -735,7 +735,7 @@ export const editorStyles = css`
   .hme-face { position: relative; overflow: hidden; border: 1px solid #3a3a3c; flex: none; }
   .hme-face > svg { position: absolute; display: block; }
   .hme-face-title, .hme-face-words { position: absolute; right: 8px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .hme-use { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 10px; background: var(--wa-input); border: 1px solid var(--wa-line); }
+  .hme-use { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 12px; background: var(--wa-input); border: 1px solid var(--wa-line); }
   .hme-use > i { width: 40px; height: 40px; border-radius: 9px; flex: 0 0 40px; border: 1px solid #3a3a3c; }
   .hme-use > div { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.3; }
   .hme-use > div > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -783,7 +783,7 @@ export const editorStyles = css`
   .hme-fgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 10px; }
   .hme-fcard {
     display: flex; flex-direction: column; align-items: stretch; gap: 3px; padding: 6px 6px 9px; text-align: left; cursor: pointer;
-    border-radius: 12px; border: 1px solid var(--wa-line); background: var(--wa-input); color: var(--wa-ink); font: inherit;
+    border-radius: 14px; border: 1px solid var(--wa-line); background: var(--wa-input); color: var(--wa-ink); font: inherit;
   }
   .hme-fcard:hover { border-color: var(--wa-line-strong); background: var(--wa-hover); }
   .hme-fcard:focus-visible { outline: none; box-shadow: var(--wa-ring, 0 0 0 2px var(--hme-sel)); }
@@ -809,7 +809,7 @@ export const editorStyles = css`
   .hme-dialog p { color: var(--wa-soft); font-size: 13.5px; line-height: 1.45; }
   .hme-dialog-field { display: flex; flex-direction: column; gap: 6px; color: var(--wa-muted); font-size: 12px; }
   .hme-dialog-field input {
-    height: 36px; border-radius: 8px; border: 1px solid var(--wa-line-strong); background: var(--wa-input); color: var(--wa-ink); font: inherit; font-size: 14px; padding: 0 10px; outline: none;
+    height: 36px; border-radius: 10px; border: 1px solid var(--wa-line-strong); background: var(--wa-input); color: var(--wa-ink); font: inherit; font-size: 14px; padding: 0 10px; outline: none;
   }
   .hme-dialog-field input:focus { border-color: var(--hme-sel); }
   .hme-dialog-row { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }

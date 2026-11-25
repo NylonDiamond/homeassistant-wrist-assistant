@@ -1950,7 +1950,7 @@ export class WaAllPages extends LitElement {
     /* The icons in the corner of a card's picture: which screen it draws. */
     .ap-thumb-wrap { position: relative; }
     .ap-screen-icons {
-      position: absolute; top: 6px; right: 6px; z-index: 2; display: inline-flex; gap: 2px; padding: 2px; border-radius: 8px;
+      position: absolute; top: 6px; right: 6px; z-index: 2; display: inline-flex; gap: 2px; padding: 2px; border-radius: 10px;
       background: color-mix(in srgb, var(--wa-card) 88%, transparent); border: 1px solid var(--wa-line-strong);
     }
     .ap-screen-icon {
@@ -1976,7 +1976,7 @@ export class WaAllPages extends LitElement {
     .ap-filter-opt:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     /* The one card after the update, over the list until dismissed. */
     .ap-upgrade {
-      display: flex; align-items: center; gap: 10px; margin: 0 0 12px; padding: 10px 12px; border-radius: 10px;
+      display: flex; align-items: center; gap: 10px; margin: 0 0 12px; padding: 10px 12px; border-radius: 12px;
       font-size: 13px; line-height: 1.4; color: var(--wa-ink);
       background: color-mix(in srgb, var(--wa-accent) 12%, var(--wa-card));
       border: 1px solid color-mix(in srgb, var(--wa-accent) 32%, var(--wa-line));
@@ -2073,7 +2073,7 @@ export class WaAllPages extends LitElement {
     /* A card's tick while picking: a box, not the panel's switch. */
     input.pk-card-pick {
       appearance: none; -webkit-appearance: none; position: relative; flex: none; margin: 0; cursor: pointer;
-      width: 17px; height: 17px; border-radius: 5px; border: 0;
+      width: 17px; height: 17px; border-radius: 7px; border: 0;
       background: color-mix(in srgb, var(--wa-ink) 8%, transparent);
       box-shadow: inset 0 0 0 1.5px var(--wa-line-strong);
     }

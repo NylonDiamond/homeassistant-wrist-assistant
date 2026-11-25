@@ -123,20 +123,20 @@ export class WaSharedTab extends LitElement {
       background: var(--wa-card); border: 1px solid var(--wa-line); box-shadow: var(--wa-shadow-card, none); border-radius: 16px;
     }
     .sh-hd { display: flex; align-items: center; gap: 10px; }
-    .sh-box { display: grid; place-items: center; width: 28px; height: 28px; flex: none; border-radius: 7px; background: var(--wa-panel); color: var(--wa-label, var(--wa-muted)); }
+    .sh-box { display: grid; place-items: center; width: 28px; height: 28px; flex: none; border-radius: 9px; background: var(--wa-panel); color: var(--wa-label, var(--wa-muted)); }
     .sh-box svg.ui-icon { width: 14px; height: 14px; }
     h2 { margin: 0; font-size: 15px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .sh-beta { flex: none; padding: 1px 6px; border: 1px solid var(--wa-line-strong); border-radius: 999px; font-size: 9.5px; font-weight: 600; letter-spacing: .1em; color: var(--wa-muted); }
     a.sh-open {
       display: inline-flex; align-items: center; gap: 6px; margin-left: auto; flex: none; height: 28px; box-sizing: border-box; padding: 0 11px;
-      border-radius: 7px; border: 1px solid var(--wa-line-strong); background: var(--wa-card);
+      border-radius: 9px; border: 1px solid var(--wa-line-strong); background: var(--wa-card);
       color: var(--wa-ink); font-size: 12.5px; font-weight: 600; text-decoration: none; white-space: nowrap;
     }
     a.sh-open:hover { background: var(--wa-hover); }
     a.sh-open:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     a.sh-open svg.ui-icon { width: 13px; height: 13px; }
     .sh-m { margin: 0; font-size: 12.5px; color: var(--wa-muted); }
-    .sh-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--wa-line); border-radius: 8px; overflow: hidden; }
+    .sh-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--wa-line); border-radius: 10px; overflow: hidden; }
     .sh-list li { display: flex; align-items: center; gap: 14px; height: 28px; padding: 0 10px; font-size: 12.5px; border-top: 1px solid var(--wa-line); }
     .sh-list li:first-child { border-top: 0; }
     .sh-list span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
