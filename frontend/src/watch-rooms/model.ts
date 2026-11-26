@@ -828,9 +828,9 @@ export const HOME_ROOMS_MAIN_HOUSE_TEXT = "The double-tap on the page title, the
 export const HOME_ROOMS_MAIN_HOUSE_WEAR_TEXT = "The double-tap on the page title and the point control settings come from this watch's main home.";
 /** The same place on an iPhone, which has no main house: its double-tap on
  * the page title is in its own settings, and it has no double pinch. */
-export const HOME_ROOMS_PHONE_TEXT = "The double-tap on the page title is in this iPhone's settings.";
+export const HOME_ROOMS_PHONE_TEXT = "To jump to your room's page yourself, set Double-tap the page title to Room Jump in this iPhone's settings.";
 /** The same on an Android phone. */
-export const HOME_ROOMS_ANDROID_TEXT = "The double-tap on the page title is in this phone's settings.";
+export const HOME_ROOMS_ANDROID_TEXT = "To jump to your room's page yourself, set Double-tap the page title to Room Jump in this phone's settings.";
 /** Over the wait on another home while an iPhone may still move its rooms
  * here. */
 export const HOME_ROOMS_NO_RECORD_TITLE = "No rooms for this home yet.";

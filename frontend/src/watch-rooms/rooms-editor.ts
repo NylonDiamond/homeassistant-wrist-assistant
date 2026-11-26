@@ -79,6 +79,7 @@ import {
 import { NO_ICONS, memoIconNames, watchKeysTypeText } from "../watch-pages/editor-host.js";
 import { watchPagePreviewStyles } from "../watch-pages/preview.js";
 import { watchFrameStyles } from "../watch-frame.js";
+import { phoneFrameStyles, phoneModelForScreenSize, phonePageLookOf, phonePagesLayout } from "../phone-frame.js";
 import { asWatchPagesDocument } from "../watch-pages/model.js";
 import { type WatchPagesNote, watchCommandError } from "../watch-pages/save-note.js";
 import { friendlyError } from "../friendly-error.js";
@@ -720,6 +721,13 @@ export class WaRoomsEditor extends LitElement {
     return (caseForScreenSize(owner?.screen_size) ?? REFERENCE_CASE).screen;
   }
 
+  /** Where an iPhone's pages screen sits, in the look it draws with no
+   * settings read, as the Pages editor's thumbnails do. */
+  private phoneLayout(watchId: string) {
+    const owner = this.watches.find((w) => w.owner_watch_id === watchId);
+    return phonePagesLayout(phoneModelForScreenSize(owner?.screen_size, owner?.platform), { look: phonePageLookOf(undefined) });
+  }
+
   private viewHost(): RoomsViewHost | undefined {
     const draft = this.draft;
     const hass = this.hass;
@@ -771,7 +779,7 @@ export class WaRoomsEditor extends LitElement {
       narrow: this.stacked,
       requestUpdate: () => this.requestUpdate(),
       ...(home ? { home: true } : {}),
-      ...(this.watches.find((w) => w.owner_watch_id === watchId)?.device_kind === "iphone" ? { phone: true } : {}),
+      ...(this.watches.find((w) => w.owner_watch_id === watchId)?.device_kind === "iphone" ? { phone: true, phoneLayout: this.phoneLayout(watchId) } : {}),
       ...(androidPlatformOf(this.watches.find((w) => w.owner_watch_id === watchId)) === "android" ? { android: true } : {}),
       ...(androidPlatformOf(this.watches.find((w) => w.owner_watch_id === watchId)) === "wearos" ? { wear: true } : {}),
     };
@@ -1127,7 +1135,7 @@ export class WaRoomsEditor extends LitElement {
     </dialog>`;
   }
 
-  static override styles = [formStyles, chromeTokens, topBarStyles, leftCardStyles, canvasStyles, inspectorStyles, watchFrameStyles, watchPagePreviewStyles, newWatchStyles, css`
+  static override styles = [formStyles, chromeTokens, topBarStyles, leftCardStyles, canvasStyles, inspectorStyles, watchFrameStyles, phoneFrameStyles, watchPagePreviewStyles, newWatchStyles, css`
     :host {
       display: flex;
       flex-direction: column;

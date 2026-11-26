@@ -33,6 +33,7 @@ import type { EntityRef } from "../model.js";
 import type { IconProvider } from "../renderer.js";
 import { uiIcon } from "../ui-icons.js";
 import { renderWatchFrame } from "../watch-frame.js";
+import { type PhonePagesLayout, phonePagesScreen, renderPhoneFrame } from "../phone-frame.js";
 import { type WatchPage, type WatchPagesDocument, watchPageId, watchPageName, watchPagesOf } from "../watch-pages/model.js";
 import { renderWatchPagePreview, watchScreenBackground } from "../watch-pages/preview.js";
 import {
@@ -123,6 +124,15 @@ export interface RoomsViewHost {
   icons?: IconProvider;
   /** The page is one column: the watch drawn a little smaller. */
   narrow?: boolean;
+  /** On a phone, where its pages screen sits: the pictures are drawn in the
+   * phone, not a watch, and a page is laid out on its pages area. */
+  phoneLayout?: PhonePagesLayout;
+}
+
+/** The screen a page is laid out on: the phone's pages area, else the
+ * watch's screen. */
+function screenOf(host: Pick<RoomsViewHost, "phoneLayout" | "screen">): { width: number; height: number } {
+  return host.phoneLayout === undefined ? (host.screen ?? DEFAULT_SCREEN) : phonePagesScreen(host.phoneLayout);
 }
 
 /** The Rooms hue, Home's Rooms door: the card outlines, the icon chips, the
@@ -151,7 +161,7 @@ function dirtyDot(on: boolean): TemplateResult | typeof nothing {
 }
 
 /** Whether a fold is open: kept per editor session in `uiState`. */
-function isOpen(host: RoomsViewHost, key: string, fallback = false): boolean {
+function isOpen(host: Pick<RoomsViewHost, "uiState">, key: string, fallback = false): boolean {
   const value = host.uiState.get(key);
   return typeof value === "boolean" ? value : fallback;
 }
@@ -294,8 +304,11 @@ function pick(host: RoomsViewHost, key: string): void {
   host.requestUpdate();
 }
 
-/** A room row's small line: how many things to point at in it, "" for none. */
-export function roomPointLine(host: Pick<RoomsViewHost, "view">, room: RoomListEntry): string {
+/** A room row's small line: how many things to point at in it, "" for none.
+ * Only while Point control is open, so the room list reads as pages alone
+ * until you work on pointing. */
+export function roomPointLine(host: Pick<RoomsViewHost, "view" | "uiState">, room: RoomListEntry): string {
+  if (!isOpen(host, "pointOpen")) return "";
   const n = host.view.zones.ok ? roomZones(host.view.zones.rooms, room.key).length : 0;
   if (n === 0) return "";
   return n === 1 ? "1 thing to point at" : `${n} things to point at`;
@@ -351,6 +364,27 @@ function renderSwitching(host: RoomsViewHost): TemplateResult {
       </div>` : nothing}`;
 }
 
+/** The top line: what the device does now. A switch that is off never
+ * reads as on, and a switch by Room Jump never reads as automatic. */
+export function switchingLine(host: RoomsViewHost): string {
+  const device = deviceWord(host);
+  if (!switchingOn(host)) {
+    return host.home === true
+      ? `${HOME_AUTO_SWITCH_LABEL} is off, so the ${device} does not change pages when you walk in.`
+      : "Room pages are off. Turn on Switch pages by room to use the pages below.";
+  }
+  if (host.home === true || host.view.trigger === "Automatic") return `The ${device} opens a room's page when the room sensor says you walked in.`;
+  return `The ${device} opens the page of the room you are in when you ask it to.`;
+}
+
+/** The line over the room list while switching is off. On another home the
+ * list still serves Room Jump; on the main house nothing reads it. */
+export function rulesOffLine(host: RoomsViewHost): string {
+  return host.home === true
+    ? `${HOME_AUTO_SWITCH_LABEL} is off. These pages still open with Room Jump.`
+    : "Off. Turn on Switch pages by room at the top to use these pages.";
+}
+
 const STATUS_KEYS = [ROOM_KEYS.sensor, ROOM_KEYS.autoSwitch, ROOM_KEYS.legacyQuickJump, ROOM_KEYS.topSectionDoubleTap, ROOM_KEYS.handGesture];
 
 /** The card at the top: where you are and what the watch shows, or, with no
@@ -377,7 +411,7 @@ function renderStatusCard(host: RoomsViewHost): TemplateResult {
   return html`<section class="rm-card rm-lit rm-status" aria-label="Switch pages by room">
     <span class="rm-ichip" aria-hidden="true">${uiIcon("home")}</span>
     <div class="rm-status-text">
-      <p class="rm-now">The ${deviceWord(host)} opens a room's page when the room sensor says you walked in.${dirty}</p>
+      <p class="rm-now ${switchingOn(host) ? "" : "off"}">${switchingLine(host)}${dirty}</p>
       <div class="rm-sensor-line">
         ${bermuda
           ? html`<span class="rm-bermuda-ok">${uiIcon("check")}<span>${nameOf(host.hass, view.sensor)}, a Bermuda sensor</span></span>`
@@ -405,16 +439,40 @@ const THUMB_SCALE = 0.16;
 /** The screen's height in pixels at a scale: the picture of a page shows one
  * screen of it, what the watch opens on, and no more. */
 function screenHeightPx(host: RoomsViewHost, scale: number): number {
-  return Math.round((host.screen ?? DEFAULT_SCREEN).height * scale * 100) / 100;
+  return Math.round(screenOf(host).height * scale * 100) / 100;
+}
+
+/** A phone's pictures: the whole phone is far taller than a watch, so
+ * smaller. */
+const PHONE_THUMB_SCALE = 0.06;
+const PHONE_STAGE_SCALE = 0.58;
+const PHONE_STAGE_SCALE_NARROW = 0.5;
+
+function thumbScale(host: RoomsViewHost): number {
+  return host.phoneLayout === undefined ? THUMB_SCALE : PHONE_THUMB_SCALE;
+}
+
+function stageScale(host: RoomsViewHost): number {
+  if (host.phoneLayout !== undefined) return host.narrow === true ? PHONE_STAGE_SCALE_NARROW : PHONE_STAGE_SCALE;
+  return host.narrow === true ? 1 : STAGE_SCALE;
+}
+
+/** What a picture of a page is drawn in: the phone, else nothing extra. */
+function phoneInput(host: RoomsViewHost): { phone?: PhonePagesLayout } {
+  return host.phoneLayout === undefined ? {} : { phone: host.phoneLayout };
 }
 
 function renderPageThumb(host: RoomsViewHost, stored: string): TemplateResult {
   const page = watchPageFor(host, stored);
-  const screen = host.screen ?? DEFAULT_SCREEN;
-  const size = `--rm-screen-h: ${screenHeightPx(host, THUMB_SCALE)}px; --rm-thumb-w: ${Math.round(screen.width * THUMB_SCALE)}px`;
-  if (page === undefined) return html`<span class="rm-thumb empty" aria-hidden="true" style=${size}></span>`;
-  return html`<span class="rm-thumb" aria-hidden="true" title=${watchPageName(page)} style=${size}>${renderWatchPagePreview({
-    page, pages: [page], screen, states: host.hass.states, ...(host.icons ? { icons: host.icons } : {}), scale: THUMB_SCALE,
+  const screen = screenOf(host);
+  const scale = thumbScale(host);
+  const phone = host.phoneLayout;
+  // A phone's empty box is the phone's whole shape, so the pickers line up.
+  const box = phone === undefined ? { width: screen.width, height: screen.height } : phone.model.screen;
+  const size = `--rm-screen-h: ${screenHeightPx(host, scale)}px; --rm-thumb-w: ${Math.round(box.width * scale)}px; --rm-thumb-h: ${Math.round(box.height * scale)}px`;
+  if (page === undefined) return html`<span class="rm-thumb empty ${phone === undefined ? "" : "phone"}" aria-hidden="true" style=${size}></span>`;
+  return html`<span class="rm-thumb ${phone === undefined ? "" : "phone"}" aria-hidden="true" title=${watchPageName(page)} style=${size}>${renderWatchPagePreview({
+    page, pages: [page], screen, states: host.hass.states, ...(host.icons ? { icons: host.icons } : {}), scale, ...phoneInput(host),
     ...(host.appVersion === undefined ? {} : { appVersion: host.appVersion }),
   })}</span>`;
 }
@@ -493,11 +551,13 @@ function renderRulesCard(host: RoomsViewHost, listed: readonly RoomListEntry[], 
   const groups = roomGroups(listed, host.floors);
   const moreOpen = isOpen(host, "moreOpen", listed.length === 0);
   const moreLabel = areas.length === 0 ? "Add a room" : `${areas.length} more ${areas.length === 1 ? "area" : "areas"} in Home Assistant`;
-  return html`<section class="rm-card rm-rules" aria-label="Room pages">
+  const off = !switchingOn(host);
+  return html`<section class="rm-card rm-rules ${off ? "off" : ""}" aria-label="Room pages">
     <div class="rm-rules-head">
       <span class="rm-cap">When I walk into${dirtyDot(anyDirty(host, [ROOM_KEYS.mappings, ROOM_KEYS.fallback]))}</span>
       <span class="rm-cap rm-cap-page">the ${deviceWord(host)} opens</span>
     </div>
+    ${off ? html`<p class="rm-off-note"><i class="rm-dot" aria-hidden="true"></i><span>${rulesOffLine(host)}</span></p>` : nothing}
     ${listed.length === 0
       ? html`<div class="rm-none">
           <b>${host.roomsState === "loading" ? "Reading your rooms" : "No rooms yet"}</b>
@@ -649,7 +709,7 @@ function renderTargets(host: RoomsViewHost, room: RoomListEntry): TemplateResult
   const zones = roomZones(view.zones.rooms, room.key);
   const addKey = `rooms:target-add:${room.key}`;
   return html`${head(zones.length)}
-    ${zones.length === 0 && !adding ? html`<p class="rm-help">None yet. Add a lamp or a switch you point the watch at in this room.</p>` : nothing}
+    ${zones.length === 0 && !adding ? html`<p class="rm-help">None yet. Add a lamp or a switch you point the ${deviceWord(host)} at in this room.</p>` : nothing}
     ${zones.map((_, i) => renderTarget(host, room.key, zones, i))}
     ${adding ? html`<div class="rm-stack rm-add-target">${entityField({ hass: host.hass }, "Add a thing", refOf(host.hass, ""), (ref) => {
       const id = ref.entityId.trim();
@@ -719,7 +779,7 @@ function renderPointCard(host: RoomsViewHost, listed: readonly RoomListEntry[], 
       <span class="rm-chev" aria-hidden="true">${uiIcon("right")}</span>
       <span class="rm-point-text">
         <span class="rm-point-title">Point control${dirtyDot(anyDirty(host, keys))}</span>
-        <span class="rm-point-sub">Point the watch at a lamp to control it. ${pointSummary(host.view)}</span>
+        <span class="rm-point-sub">Point the ${deviceWord(host)} at a lamp to control it. ${pointSummary(host.view)}</span>
       </span>
     </button>
     ${open ? html`<div class="rm-point-body">
@@ -743,8 +803,8 @@ const STAGE_SCALE = 1.15;
 /** The watch showing a page: the page itself when the watch's pages are at
  * hand, else a plain screen with its name, or `blank` when there is none. */
 function renderRoomWatch(host: RoomsViewHost, stored: string, blank: string): TemplateResult {
-  const screen = host.screen ?? DEFAULT_SCREEN;
-  const scale = host.narrow === true ? 1 : STAGE_SCALE;
+  const screen = screenOf(host);
+  const scale = stageScale(host);
   const page = watchPageFor(host, stored);
   if (page !== undefined) {
     return renderWatchPagePreview({
@@ -754,20 +814,26 @@ function renderRoomWatch(host: RoomsViewHost, stored: string, blank: string): Te
       states: host.hass.states,
       ...(host.icons ? { icons: host.icons } : {}),
       scale,
+      ...phoneInput(host),
       ...(host.home === true ? {} : { behavior: host.document }),
       ...(host.appVersion === undefined ? {} : { appVersion: host.appVersion }),
     });
   }
   const name = pageNameOf(host, stored);
-  return renderWatchFrame(screen, scale, html`<div class="wp-screen rm-screen ${name === "" ? "blank" : ""}"
+  const plain = html`<div class="wp-screen rm-screen ${name === "" ? "blank" : ""}"
     style=${`width:${screen.width * scale}px;height:${screen.height * scale}px;background:${watchScreenBackground({}, scale, screen)}`}>
     <span>${name === "" ? blank : name}</span>
-  </div>`, name === "" ? "Watch" : `Watch showing ${name}`);
+  </div>`;
+  if (host.phoneLayout !== undefined) {
+    const noun = host.android === true ? "Phone" : "iPhone";
+    return renderPhoneFrame(host.phoneLayout, scale, plain, { label: name === "" ? noun : `${noun} showing ${name}`, ...(host.icons ? { icons: host.icons } : {}) });
+  }
+  return renderWatchFrame(screen, scale, plain, name === "" ? "Watch" : `Watch showing ${name}`);
 }
 
 /** The sticky stage beside the rules: the picked room's page on the watch. */
 function renderStage(host: RoomsViewHost, room: RoomListEntry | undefined): TemplateResult {
-  const scale = host.narrow === true ? 1 : STAGE_SCALE;
+  const scale = stageScale(host);
   if (room === undefined) {
     return html`<div class="card canvas-card lit rm-canvas" aria-label="Preview">
       <div class="rm-stage-head"><span class="rm-eyebrow">Preview</span><b class="rm-stage-title">No rooms yet</b></div>
@@ -789,10 +855,64 @@ function renderStage(host: RoomsViewHost, room: RoomListEntry | undefined): Temp
       ${note === "" ? nothing : html`<span class="rm-stage-note">${note}</span>`}
     </div>
     <div class="stage-area rm-stage-area">
-      <div class="rm-stage-body" style=${`--rm-screen-h: ${screenHeightPx(host, scale)}px`}>${renderRoomWatch(host, shown, "No page for this room. The watch uses Anywhere else.")}</div>
+      <div class="rm-stage-body" style=${`--rm-screen-h: ${screenHeightPx(host, scale)}px`}>${renderRoomWatch(host, shown, `No page for this room. The ${deviceWord(host)} uses Anywhere else.`)}</div>
     </div>
     <p class="rm-stage-foot">Click a room to see what the ${deviceWord(host)} opens there.</p>
   </div>`;
+}
+
+// ── how it works ─────────────────────────────────────────────────────────
+
+/** Where the browser keeps that How it works was closed, for every device. */
+export const INTRO_HIDDEN_KEY = "wa-rooms-intro-hidden";
+
+function introStorage(): Storage | undefined {
+  try {
+    return globalThis.localStorage ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Whether How it works shows: until it is closed, in this session or
+ * before in this browser. */
+export function introShown(host: Pick<RoomsViewHost, "uiState">): boolean {
+  if (host.uiState.get("introHidden") === true) return false;
+  try {
+    return introStorage()?.getItem(INTRO_HIDDEN_KEY) !== "1";
+  } catch {
+    return true;
+  }
+}
+
+function hideIntro(host: RoomsViewHost): void {
+  host.uiState.set("introHidden", true);
+  try {
+    introStorage()?.setItem(INTRO_HIDDEN_KEY, "1");
+  } catch {
+    // Storage off: it stays closed for this visit only.
+  }
+  host.requestUpdate();
+}
+
+/** The three steps, in the device's word. */
+export function introSteps(host: Pick<RoomsViewHost, "phone" | "android">): string[] {
+  return [
+    "A room sensor tells Home Assistant which room you are in.",
+    "You pick a page for each room below.",
+    `You walk in, and the ${deviceWord(host)} opens that room's page.`,
+  ];
+}
+
+function renderIntro(host: RoomsViewHost): TemplateResult | typeof nothing {
+  if (!introShown(host)) return nothing;
+  return html`<section class="rm-intro" aria-label="How Rooms works">
+    <span class="rm-eyebrow rm-intro-head">How it works</span>
+    <ol class="rm-steps">
+      ${introSteps(host).map((step, i) => html`<li class="rm-step"><span class="rm-step-n" aria-hidden="true">${i + 1}</span><span>${step}</span></li>`)}
+    </ol>
+    <button type="button" class="rm-btn rm-small rm-intro-x" @click=${() => hideIntro(host)}>Got it</button>
+  </section>`;
 }
 
 /** The whole body: the rules in the main column, the stage beside them. */
@@ -800,7 +920,7 @@ export function renderRoomsBody(host: RoomsViewHost): TemplateResult {
   const listed = listedRooms(host);
   const picked = pickedRoom(host, listed);
   return html`<div class="rm-layout" style=${`--wa-stage-hue: ${ROOMS_HUE}; --rm-hue: ${ROOMS_HUE}`}>
-    <div class="rm-cell rm-cell-status">${renderStatusCard(host)}</div>
+    <div class="rm-cell rm-cell-status">${renderIntro(host)}${renderStatusCard(host)}</div>
     <div class="rm-cell rm-cell-rules">${renderRulesCard(host, listed, picked)}</div>
     <aside class="rm-side column canvas" aria-label="Preview">${renderStage(host, picked)}</aside>
     <div class="rm-cell rm-cell-point">${renderPointCard(host, listed, picked)}</div>
@@ -917,6 +1037,23 @@ export const roomsViewStyles = css`
   .rm-dot.ok { background: var(--wa-green); }
   .rm-dot.warn { background: var(--wa-amber); }
 
+  .rm-now.off { color: var(--wa-soft); }
+  /* How it works: three numbered steps in one row, closed for good by Got it. */
+  .rm-intro {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 12px; row-gap: 8px;
+    margin-bottom: 14px; padding: 12px 14px 12px 16px; border-radius: var(--wa-lc-r, 16px);
+    border: 1px dashed var(--wa-line-strong); background: var(--wa-panel);
+  }
+  .rm-intro-head { grid-column: 1; }
+  .rm-intro-x { grid-column: 2; grid-row: 1; }
+  ol.rm-steps { grid-column: 1 / -1; list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .rm-step { display: flex; align-items: flex-start; gap: 9px; font-size: 13px; line-height: 1.45; color: var(--wa-ink); overflow-wrap: anywhere; }
+  .rm-step-n {
+    flex: none; width: 22px; height: 22px; border-radius: 999px; display: grid; place-items: center;
+    font-size: 12px; font-weight: 600; color: var(--rm-hue); border: 1px solid var(--rm-hue);
+  }
+  @container (max-width: 640px) { ol.rm-steps { grid-template-columns: minmax(0, 1fr); gap: 8px; } }
+
   /* Start here: no sensor picked yet. */
   .rm-start { display: flex; flex-direction: column; gap: 10px; padding: 18px; }
   .rm-start-title { margin: 0; font-size: 18px; font-weight: 500; letter-spacing: -.015em; text-transform: none; color: var(--wa-ink); overflow-wrap: anywhere; }
@@ -932,6 +1069,11 @@ export const roomsViewStyles = css`
   .rm-rules-head { display: flex; align-items: baseline; gap: 10px; padding: 14px 16px 8px; }
   .rm-rules-head > .rm-cap:first-child { flex: 1; }
   .rm-group { display: flex; flex-direction: column; }
+  /* Switching off: the rooms dim, still there to edit, and one line says why. */
+  .rm-off-note { display: flex; align-items: flex-start; gap: 8px; margin: 0 16px 6px; padding: 8px 10px; border-radius: 10px; font-size: 12.5px; line-height: 1.45; color: var(--wa-soft); background: var(--wa-panel); overflow-wrap: anywhere; }
+  .rm-off-note .rm-dot { margin-top: 5px; }
+  .rm-rules.off :is(.rm-group, .rm-else) { opacity: .55; transition: opacity .15s ease; }
+  .rm-rules.off :is(.rm-group, .rm-else):is(:hover, :focus-within) { opacity: 1; }
   .rm-floor { padding: 8px 16px 4px; font-size: 11.5px; color: var(--wa-faint); overflow-wrap: anywhere; }
   ul.rm-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
   .rm-row {
@@ -972,7 +1114,10 @@ export const roomsViewStyles = css`
   .rm-thumb { flex: none; display: block; width: var(--rm-thumb-w); }
   .rm-thumb .wa-watch { margin: 0; }
   .rm-thumb.empty { height: var(--rm-screen-h); border-radius: 6px; border: 1px dashed var(--wa-line-strong); }
+  .rm-thumb.phone { width: auto; min-width: var(--rm-thumb-w); }
+  .rm-thumb.phone.empty { height: var(--rm-thumb-h); border-radius: 7px; }
   :is(.rm-stage-body, .rm-thumb) .wa-watch > .wp-screen { max-height: var(--rm-screen-h); }
+  :is(.rm-stage-body, .rm-thumb) .wa-phone-area > .wp-screen { max-height: var(--rm-screen-h); overflow: hidden; }
   :is(.rm-stage-body, .rm-thumb) .wp-fold { display: none; }
   @container (max-width: 640px) {
     .rm-row { flex-wrap: wrap; row-gap: 8px; }
