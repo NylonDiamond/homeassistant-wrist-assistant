@@ -115,7 +115,7 @@ describe("iPhone settings", () => {
     expect(keys).not.toContain("pointControlShowHUD");
     const tap = settings.find((s) => s.key === "topSectionDoubleTapAction")!;
     expect(tap.options!.map((o) => o.value)).toEqual(["Disabled", "Room Jump", "Activate Scene", "Run Script", "Refresh", "Next Page", "Previous Page", "Toggle First Tile"]);
-    expect(tap.help).toBe("Tap the page's name at the top twice. It works while Page name is set to Show.");
+    expect(tap.help).toBe("Tap the top of the screen twice: the page's name, or the strip under the clock when the name is hidden.");
   });
 
   it("show the dots' look and the popup background only with the Watch look", () => {

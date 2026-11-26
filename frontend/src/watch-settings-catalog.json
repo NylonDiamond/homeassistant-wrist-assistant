@@ -84,7 +84,7 @@
           "type": "enum",
           "label": "Double-tap the page title",
           "help": "Tap the name at the top of a page twice. Switch home needs two or more homes on this watch.",
-          "phoneHelp": "Tap the page's name at the top twice. It works while Page name is set to Show.",
+          "phoneHelp": "Tap the top of the screen twice: the page's name, or the strip under the clock when the name is hidden.",
           "default": "Disabled",
           "options": [
             {"value": "Disabled", "label": "Nothing"},
