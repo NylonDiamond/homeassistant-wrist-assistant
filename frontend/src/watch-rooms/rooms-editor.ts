@@ -114,7 +114,7 @@ import {
   saveBlockedText,
 } from "../watch-menus/new-watch.js";
 import { type RoomsDraft, anyRoomsDirty, dropAllRooms, forgetRoomsDraft, keptRoomsDraft, newRoomsDraft, saveRoomsDraft, takeRoomsRecord } from "./draft.js";
-import { navigateWatchRooms, registerWatchRoomsDrafts } from "./hook.js";
+import { type RoomsEditorMode, navigateWatchRooms, registerWatchRoomsDrafts } from "./hook.js";
 import {
   type AreaEntry,
   type BehaviorDocument,
@@ -247,6 +247,8 @@ export class WaRoomsEditor extends LitElement {
   /** The home keeps phone pages (`phone-pages.ts`): an iPhone is a device
    * this element opens too, on its own `rooms` record (`roomsKindFor`). */
   @property({ attribute: false }) phones = false;
+  /** Rooms (pages per room) or Point control: one record, two tabs. */
+  @property({ attribute: false }) mode: RoomsEditorMode = "rooms";
   /** The box in the panel's Watch app header the bar is drawn in
    * (`head-bar.ts`). Without one the bar is drawn on top, as it always was. */
   @property({ attribute: false }) barHost: HTMLElement | undefined = undefined;
@@ -755,6 +757,7 @@ export class WaRoomsEditor extends LitElement {
       roomsState: this.areasRead ? "ready" : "loading",
       busy: draft.saving,
       uiState: this.uiState,
+      mode: this.mode,
       write: (writes, coalesce) => {
         if (this.draft !== draft) return;
         // A home that is not the main house never writes the main house's keys.

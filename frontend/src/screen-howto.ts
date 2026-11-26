@@ -35,7 +35,7 @@ const ART: Readonly<Record<HowToArt, TemplateResult>> = {
 
 /** The screens whose tab carries a how-to. Settings and the retired
  * Control Center have none. */
-export type HowToScreen = "pages" | "menus" | "status-pages" | "rooms" | "voice" | "watch-complications" | "http-actions" | "cameras" | "home-map";
+export type HowToScreen = "pages" | "menus" | "status-pages" | "rooms" | "point" | "voice" | "watch-complications" | "http-actions" | "cameras" | "home-map";
 
 /** How each screen's work is used on the watch, checked against the watch
  * app's code (WatchHomeView, InteractiveGrid, StatusPageIntent,
@@ -75,6 +75,11 @@ export const SCREEN_HOW_TO: Readonly<Record<HowToScreen, HowTo>> = {
     art: "room", label: "On your watch",
     how: "While the app is open, the watch opens the page you set for the room you walk into.",
     use: "A page for each room, like the kitchen lights in the kitchen. It needs a sensor that knows your room, like Bermuda.",
+  },
+  "point": {
+    art: "room", label: "On your watch",
+    how: "Face a lamp or a switch in the room you are in and tap a point control tile. It controls the thing you aim at.",
+    use: "Things you control often from one spot, like the lamp by the sofa. It needs the room sensor from Rooms.",
   },
   "voice": {
     art: "voice", label: "On your watch",

@@ -28,7 +28,7 @@ import { deviceKindOf } from "./version.js";
 import { watchControlCenterRouteOwner } from "./watch-control-center/hook.js";
 import { watchMenusRouteOwner } from "./watch-menus/hook.js";
 import { type PanelRoute, watchPagesRouteOwner } from "./watch-pages/hook.js";
-import { watchRoomsRouteOwner } from "./watch-rooms/hook.js";
+import { watchPointRouteOwner, watchRoomsRouteOwner } from "./watch-rooms/hook.js";
 import { initialWatch } from "./watch-settings.js";
 import { watchSettingsRouteOwner } from "./watch-settings-page.js";
 import { watchStatusPagesRouteOwner } from "./watch-status-pages/hook.js";
@@ -52,6 +52,7 @@ export function watchRouteOwner(route: PanelRoute | undefined): string | undefin
     ?? watchStatusPagesRouteOwner(route)
     ?? watchControlCenterRouteOwner(route)
     ?? watchRoomsRouteOwner(route)
+    ?? watchPointRouteOwner(route)
     ?? watchComplicationsRouteOwner(route)
     ?? watchSettingsRouteOwner(route);
 }

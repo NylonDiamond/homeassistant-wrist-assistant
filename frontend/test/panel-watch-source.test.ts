@@ -202,7 +202,7 @@ describe("the watch screens under the row", () => {
       `case "pages": return { dirty: watchPagesDirty(), drop: dropWatchPagesDrafts, saves: watchPagesSavesDone() };`,
       `case "menus": return { dirty: watchMenusDirty(), drop: dropWatchMenusDrafts };`,
       `case "status-pages": return { dirty: watchStatusPagesDirty(), drop: dropWatchStatusPagesDrafts, saves: watchStatusPagesSavesDone() };`,
-      `case "rooms": return { dirty: watchRoomsDirty(), drop: dropWatchRoomsDrafts };`,
+      `case "point": return { dirty: watchRoomsDirty(), drop: dropWatchRoomsDrafts };`,
       `case "voice": return { dirty: watchVoiceDirty(), drop: dropWatchVoiceDrafts };`,
       `case "http-actions": return { dirty: watchHttpActionsDirty(), drop: dropWatchHttpActionsDrafts };`,
       `case "cameras": return { dirty: watchCamerasDirty(), drop: dropWatchCamerasDrafts };`,

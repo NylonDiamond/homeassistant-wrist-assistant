@@ -148,15 +148,15 @@ describe("the row's watches", () => {
 describe("the row's screen links", () => {
   it("lists a watch's own screens, Settings first, each on the shared watch, the one on show marked", () => {
     const links = watchRowLinks(route("/rooms/w1"), "w2");
-    expect(links.map((l) => l.screen.label)).toEqual(["Settings", "Rooms", "Voice"]);
-    expect(links.map((l) => l.path)).toEqual(["/settings/w2", "/rooms/w2", "/voice/w2"]);
+    expect(links.map((l) => l.screen.label)).toEqual(["Settings", "Rooms", "Point control", "Voice"]);
+    expect(links.map((l) => l.path)).toEqual(["/settings/w2", "/rooms/w2", "/point/w2", "/voice/w2"]);
     expect(links.filter((l) => l.on).map((l) => l.screen.id)).toEqual(["rooms"]);
   });
 
   it("lists an iPhone's own screens at their iPhone addresses, with no Voice", () => {
     const links = watchRowLinks(route("/iphone/rooms/p1"), "p1", "iphone");
-    expect(links.map((l) => l.screen.label)).toEqual(["Settings", "Rooms"]);
-    expect(links.map((l) => l.path)).toEqual(["/iphone/settings/p1", "/iphone/rooms/p1"]);
+    expect(links.map((l) => l.screen.label)).toEqual(["Settings", "Rooms", "Point control"]);
+    expect(links.map((l) => l.path)).toEqual(["/iphone/settings/p1", "/iphone/rooms/p1", "/iphone/point/p1"]);
     expect(links.filter((l) => l.on).map((l) => l.screen.id)).toEqual(["rooms"]);
   });
 
@@ -237,7 +237,7 @@ describe("the row as drawn", () => {
 
   it("sends a pick, a screen, the Pages link and the menu's toggle to the panel", () => {
     const shut = row();
-    const [toggle, settings, , voice, board] = handlers(shut.tpl, "@click");
+    const [toggle, settings, , , voice, board] = handlers(shut.tpl, "@click");
     toggle!(click);
     settings!(click);
     voice!(click);

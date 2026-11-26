@@ -75,7 +75,7 @@ describe("the home's phone pages", () => {
   });
 
   it("gives a phone Pages, Menus, Status pages, Rooms and Settings, and nothing else", () => {
-    expect(WATCH_SCREENS.filter(screenTakesPhone).map((s) => s.id)).toEqual(["pages", "menus", "status-pages", "rooms"]);
+    expect(WATCH_SCREENS.filter(screenTakesPhone).map((s) => s.id)).toEqual(["pages", "menus", "status-pages", "rooms", "point"]);
     expect(screenTakesPhone(WATCH_SETTINGS_SCREEN)).toBe(true);
   });
 });
@@ -250,7 +250,7 @@ describe("the iPhone app's row", () => {
   it("lists an iPhone's own screens, Settings first, at their iPhone app addresses, then the Pages link", () => {
     const at = { prefix: "/wrist-assistant", path: "/iphone/rooms/p1" };
     const links = watchRowLinks(at, "p1", "iphone");
-    expect(links.map((l) => l.path)).toEqual(["/iphone/settings/p1", "/iphone/rooms/p1"]);
+    expect(links.map((l) => l.path)).toEqual(["/iphone/settings/p1", "/iphone/rooms/p1", "/iphone/point/p1"]);
     expect(links.filter((l) => l.on).map((l) => l.screen.id)).toEqual(["rooms"]);
     const text = row({ route: at });
     for (const gone of [">Voice</a>", ">HTTP actions</a>", ">Cameras</a>", ">Widgets</a>", ">Menus</a>"]) expect(text, gone).not.toContain(gone);
@@ -311,7 +311,7 @@ describe("the Watch app's row on a home with phone pages", () => {
 
   it("keeps a watch's own screens on the watch", () => {
     expect(watchRowLinks({ prefix: "/wrist-assistant", path: "/rooms/w1" }, "w1").map((l) => l.path))
-      .toEqual(["/settings/w1", "/rooms/w1", "/voice/w1"]);
+      .toEqual(["/settings/w1", "/rooms/w1", "/point/w1", "/voice/w1"]);
   });
 
   it("offers Pair a watch in a home with an iPhone and no watch, with no iPhone in the slot", () => {

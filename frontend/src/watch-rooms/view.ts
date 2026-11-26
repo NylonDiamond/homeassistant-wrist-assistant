@@ -34,6 +34,7 @@ import type { IconProvider } from "../renderer.js";
 import { uiIcon } from "../ui-icons.js";
 import { renderWatchFrame } from "../watch-frame.js";
 import { type PhonePagesLayout, phonePagesScreen, renderPhoneFrame } from "../phone-frame.js";
+import { type RoomsEditorMode, switchRoomsMode } from "./hook.js";
 import { type WatchPage, type WatchPagesDocument, watchPageId, watchPageName, watchPagesOf } from "../watch-pages/model.js";
 import { renderWatchPagePreview, watchScreenBackground } from "../watch-pages/preview.js";
 import {
@@ -127,6 +128,10 @@ export interface RoomsViewHost {
   /** On a phone, where its pages screen sits: the pictures are drawn in the
    * phone, not a watch, and a page is laid out on its pages area. */
   phoneLayout?: PhonePagesLayout;
+  /** Rooms (the default) or Point control: the same record on two tabs. */
+  mode?: RoomsEditorMode;
+  /** Go to the other tab. Absent, the address is swapped in place. */
+  openMode?(mode: RoomsEditorMode): void;
 }
 
 /** The screen a page is laid out on: the phone's pages area, else the
@@ -304,11 +309,9 @@ function pick(host: RoomsViewHost, key: string): void {
   host.requestUpdate();
 }
 
-/** A room row's small line: how many things to point at in it, "" for none.
- * Only while Point control is open, so the room list reads as pages alone
- * until you work on pointing. */
-export function roomPointLine(host: Pick<RoomsViewHost, "view" | "uiState">, room: RoomListEntry): string {
-  if (!isOpen(host, "pointOpen")) return "";
+/** How many things to point at in a room, in words, "" for none: Point
+ * control's room picker names it beside the room. */
+export function roomPointLine(host: Pick<RoomsViewHost, "view">, room: RoomListEntry): string {
   const n = host.view.zones.ok ? roomZones(host.view.zones.rooms, room.key).length : 0;
   if (n === 0) return "";
   return n === 1 ? "1 thing to point at" : `${n} things to point at`;
@@ -377,12 +380,32 @@ export function switchingLine(host: RoomsViewHost): string {
   return `The ${device} opens the page of the room you are in when you ask it to.`;
 }
 
-/** The line over the room list while switching is off. On another home the
- * list still serves Room Jump; on the main house nothing reads it. */
+/** The line over the room list while switching is off. A watch on another
+ * home still opens them with its main home's Room Jump; on a phone or a
+ * watch's main home nothing reads them. */
 export function rulesOffLine(host: RoomsViewHost): string {
-  return host.home === true
-    ? `${HOME_AUTO_SWITCH_LABEL} is off. These pages still open with Room Jump.`
-    : "Off. Turn on Switch pages by room at the top to use these pages.";
+  if (!listUnused(host)) return `${HOME_AUTO_SWITCH_LABEL} is off. These pages still open with Room Jump.`;
+  return `Nothing opens these pages until you turn on ${switchLabel(host)} at the top.`;
+}
+
+/** The switch that turns room pages on, by its label. */
+function switchLabel(host: RoomsViewHost): string {
+  return host.home === true ? HOME_AUTO_SWITCH_LABEL : "Switch pages by room";
+}
+
+/** Whether nothing reads the room list now: switching is off on a watch's
+ * main home or on a phone. A watch on another home may still Room Jump. */
+export function listUnused(host: RoomsViewHost): boolean {
+  return !switchingOn(host) && (host.home !== true || host.phone === true);
+}
+
+/** The folded list's line: how many rooms have a page, and what turns them
+ * on. */
+export function foldedListLine(host: RoomsViewHost, listed: readonly RoomListEntry[]): string {
+  const n = listed.filter((r) => roomPage(host.view, r.key) !== "").length;
+  const turn = `Turn on ${switchLabel(host)} above to use`;
+  if (n === 0) return `No room has a page yet. ${turn} them.`;
+  return n === 1 ? `1 room has a page. ${turn} it.` : `${n} rooms have pages. ${turn} them.`;
 }
 
 const STATUS_KEYS = [ROOM_KEYS.sensor, ROOM_KEYS.autoSwitch, ROOM_KEYS.legacyQuickJump, ROOM_KEYS.topSectionDoubleTap, ROOM_KEYS.handGesture];
@@ -489,12 +512,10 @@ function renderRuleRow(host: RoomsViewHost, room: RoomListEntry, on: boolean): T
     if (removal.size > 0) host.write(removal);
     host.requestUpdate();
   };
-  const line = roomPointLine(host, room);
   return html`<li class="rm-row ${on ? "on" : ""}" @click=${() => pick(host, room.key)}>
     <span class="rm-row-room">
       <button type="button" class="rm-row-name" aria-pressed=${on ? "true" : "false"} title=${`Show this room on the ${deviceWord(host)}`}
         @click=${(e: Event) => { e.stopPropagation(); pick(host, room.key); }}>${room.name}</button>
-      ${line === "" ? nothing : html`<span class="rm-row-sub">${line}</span>`}
     </span>
     <span class="rm-arrow" aria-hidden="true">${uiIcon("arrow")}</span>
     <span class="rm-row-page">
@@ -552,12 +573,15 @@ function renderRulesCard(host: RoomsViewHost, listed: readonly RoomListEntry[], 
   const moreOpen = isOpen(host, "moreOpen", listed.length === 0);
   const moreLabel = areas.length === 0 ? "Add a room" : `${areas.length} more ${areas.length === 1 ? "area" : "areas"} in Home Assistant`;
   const off = !switchingOn(host);
+  const folded = listUnused(host) && listed.length > 0 && !isOpen(host, "listOpen");
   return html`<section class="rm-card rm-rules ${off ? "off" : ""}" aria-label="Room pages">
     <div class="rm-rules-head">
       <span class="rm-cap">When I walk into${dirtyDot(anyDirty(host, [ROOM_KEYS.mappings, ROOM_KEYS.fallback]))}</span>
       <span class="rm-cap rm-cap-page">the ${deviceWord(host)} opens</span>
     </div>
-    ${off ? html`<p class="rm-off-note"><i class="rm-dot" aria-hidden="true"></i><span>${rulesOffLine(host)}</span></p>` : nothing}
+    ${folded ? html`<button type="button" class="rm-fold rm-folded" aria-expanded="false" @click=${() => flip(host, "listOpen", false)}>
+        <span class="rm-chev" aria-hidden="true">${uiIcon("right")}</span><span>${foldedListLine(host, listed)}</span>
+      </button>` : html`${off ? html`<p class="rm-off-note"><i class="rm-dot" aria-hidden="true"></i><span>${rulesOffLine(host)}</span></p>` : nothing}
     ${listed.length === 0
       ? html`<div class="rm-none">
           <b>${host.roomsState === "loading" ? "Reading your rooms" : "No rooms yet"}</b>
@@ -567,7 +591,7 @@ function renderRulesCard(host: RoomsViewHost, listed: readonly RoomListEntry[], 
           ${g.name === "" ? nothing : html`<span class="rm-floor">${g.name}</span>`}
           <ul class="rm-rows">${g.rooms.map((r) => renderRuleRow(host, r, r.key === picked?.key))}</ul>
         </div>`)}
-    ${renderFallbackRow(host)}
+    ${renderFallbackRow(host)}`}
     <button type="button" class="rm-fold" aria-expanded=${moreOpen ? "true" : "false"} @click=${() => flip(host, "moreOpen", moreOpen)}>
       <span class="rm-chev" aria-hidden="true">${uiIcon("right")}</span>${moreLabel}
     </button>
@@ -770,28 +794,50 @@ export function pointSummary(view: Pick<RoomsView, "zones">): string {
   return `${things} ${things === 1 ? "thing" : "things"} in ${counts.length} ${counts.length === 1 ? "room" : "rooms"}.`;
 }
 
-function renderPointCard(host: RoomsViewHost, listed: readonly RoomListEntry[], picked: RoomListEntry | undefined): TemplateResult {
-  const open = isOpen(host, "pointOpen");
+function openMode(host: RoomsViewHost, mode: RoomsEditorMode): void {
+  if (host.openMode !== undefined) host.openMode(mode);
+  else switchRoomsMode(mode);
+}
+
+/** The line under Point control's title: where the room comes from. */
+export function pointSensorLine(host: RoomsViewHost): string {
+  const device = deviceWord(host);
+  if (host.view.sensor === "") return `Pick a room sensor in Rooms first, so the ${device} knows which room you are in.`;
+  return `The ${device} knows the room from the room sensor in Rooms: ${nameOf(host.hass, host.view.sensor)}.`;
+}
+
+/** Point control's own tab: the room's things to point at and, on a
+ * watch's main home, how every room aims. The room sensor and the rooms are
+ * Rooms', named here with a way there. */
+function renderPointPage(host: RoomsViewHost, listed: readonly RoomListEntry[], picked: RoomListEntry | undefined): TemplateResult {
   const home = host.home === true;
   const keys = home ? [ROOM_KEYS.zones] : [ROOM_KEYS.zones, ROOM_KEYS.aim, ROOM_KEYS.tapToToggle, ROOM_KEYS.liveTile];
-  return html`<section class="rm-card rm-point" aria-label="Point control">
-    <button type="button" class="rm-point-head" aria-expanded=${open ? "true" : "false"} @click=${() => flip(host, "pointOpen", open)}>
-      <span class="rm-chev" aria-hidden="true">${uiIcon("right")}</span>
-      <span class="rm-point-text">
-        <span class="rm-point-title">Point control${dirtyDot(anyDirty(host, keys))}</span>
-        <span class="rm-point-sub">Point the ${deviceWord(host)} at a lamp to control it. ${pointSummary(host.view)}</span>
-      </span>
-    </button>
-    ${open ? html`<div class="rm-point-body">
+  const roomLabel = (r: RoomListEntry): string => {
+    const line = roomPointLine(host, r);
+    return line === "" ? r.name : `${r.name}, ${line}`;
+  };
+  return html`<section class="rm-card rm-lit rm-point rm-point-page" aria-label="Point control">
+    <div class="rm-point-intro">
+      <span class="rm-ichip" aria-hidden="true">${uiIcon("tap")}</span>
+      <div class="rm-status-text">
+        <p class="rm-now">Point the ${deviceWord(host)} at a lamp or a switch to control it.${dirtyDot(anyDirty(host, keys))}</p>
+        <div class="rm-sensor-line">
+          <span class=${host.view.sensor === "" ? "rm-warn" : ""}>${pointSensorLine(host)}</span>
+          <button type="button" class="rm-btn rm-small" @click=${() => openMode(host, "rooms")}>Open Rooms</button>
+        </div>
+        <span class="rm-point-sub">${pointSummary(host.view)}</span>
+      </div>
+    </div>
+    <div class="rm-point-body">
       ${picked === undefined
-        ? html`<p class="rm-help">Add a room first, then the things you point at in it.</p>`
+        ? html`<p class="rm-help">Add a room in Rooms first, then the things you point at in it.</p>`
         : html`<label class="rm-point-room">
             <span>Room</span>
-            ${pageSelect("Room for point control", picked.key, listed.map((r): [string, string] => [r.key, r.name]), (v) => pick(host, v), false)}
+            ${pageSelect("Room for point control", picked.key, listed.map((r): [string, string] => [r.key, roomLabel(r)]), (v) => pick(host, v), false)}
           </label>
           ${renderTargets(host, picked)}`}
       ${home ? nothing : renderPointSwitches(host)}
-    </div>` : nothing}
+    </div>
   </section>`;
 }
 
@@ -919,11 +965,16 @@ function renderIntro(host: RoomsViewHost): TemplateResult | typeof nothing {
 export function renderRoomsBody(host: RoomsViewHost): TemplateResult {
   const listed = listedRooms(host);
   const picked = pickedRoom(host, listed);
-  return html`<div class="rm-layout" style=${`--wa-stage-hue: ${ROOMS_HUE}; --rm-hue: ${ROOMS_HUE}`}>
+  const hues = `--wa-stage-hue: ${ROOMS_HUE}; --rm-hue: ${ROOMS_HUE}`;
+  if (host.mode === "point") {
+    return html`<div class="rm-layout rm-layout-point" style=${hues}>
+      <div class="rm-cell rm-cell-status">${renderPointPage(host, listed, picked)}</div>
+    </div>`;
+  }
+  return html`<div class="rm-layout" style=${hues}>
     <div class="rm-cell rm-cell-status">${renderIntro(host)}${renderStatusCard(host)}</div>
     <div class="rm-cell rm-cell-rules">${renderRulesCard(host, listed, picked)}</div>
     <aside class="rm-side column canvas" aria-label="Preview">${renderStage(host, picked)}</aside>
-    <div class="rm-cell rm-cell-point">${renderPointCard(host, listed, picked)}</div>
   </div>`;
 }
 
@@ -940,11 +991,11 @@ export const roomsViewStyles = css`
   .rm-cell { min-width: 0; }
   .rm-cell-status { grid-column: 1; grid-row: 1; }
   .rm-cell-rules { grid-column: 1; grid-row: 2; }
-  .rm-cell-point { grid-column: 1; grid-row: 3; }
+  .rm-layout-point { grid-template-columns: minmax(0, 820px); }
   .rm-side { grid-column: 2; grid-row: 1 / span 3; position: sticky; top: var(--rm-side-top, 12px); min-width: 0; }
   @container (max-width: 1000px) {
     .rm-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; }
-    .rm-cell-status, .rm-cell-rules, .rm-cell-point, .rm-side { grid-column: 1; grid-row: auto; }
+    .rm-cell-status, .rm-cell-rules, .rm-side { grid-column: 1; grid-row: auto; }
     .rm-side { position: static; }
   }
 
@@ -1157,17 +1208,12 @@ export const roomsViewStyles = css`
   .rm-add-room input:focus-visible { outline: none; border-color: var(--wa-accent); box-shadow: var(--wa-ring); }
   .rm-more > .rm-help { margin: -4px 0 0; }
 
-  /* Point control, folded: one line, then the picked room's targets and the
-     two switches. */
-  button.rm-point-head {
-    display: flex; align-items: center; gap: 10px; width: 100%; padding: 13px 16px; border-radius: var(--wa-lc-r, 16px);
-    font: inherit; text-align: left; cursor: pointer; color: var(--wa-ink); background: transparent; border: 0;
-  }
-  button.rm-point-head:hover { background: var(--wa-hover); }
-  button.rm-point-head:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  button.rm-point-head > .rm-chev { color: var(--wa-muted); }
-  .rm-point-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-  .rm-point-title { font-size: 13.5px; font-weight: 500; }
+  /* Point control's own tab: the line and where the room comes from, then
+     the picked room's targets and the switches. */
+  .rm-point-intro { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 16px; align-items: start; padding: 16px 18px 6px; }
+  .rm-point-page .rm-point-body { padding: 4px 18px 16px; }
+  .rm-warn { color: var(--wa-amber); }
+  button.rm-folded { border-top: 0; color: var(--wa-soft); }
   .rm-point-sub { font-size: 12px; color: var(--wa-muted); overflow-wrap: anywhere; }
   .rm-point-body { display: flex; flex-direction: column; padding: 2px 16px 14px 38px; }
   @container (max-width: 560px) { .rm-point-body { padding-left: 16px; } }

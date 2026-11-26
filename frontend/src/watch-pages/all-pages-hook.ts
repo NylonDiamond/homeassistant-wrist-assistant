@@ -35,7 +35,7 @@ export function listFocusPath(base: string, ownerId: string | undefined): string
 }
 
 /** A device's own screens, one click from its focused column. */
-export type ListOwnScreen = "settings" | "rooms" | "voice";
+export type ListOwnScreen = "settings" | "rooms" | "point" | "voice";
 
 let loading: Promise<void> | undefined;
 let loadFailed = false;

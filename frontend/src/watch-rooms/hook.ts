@@ -16,17 +16,37 @@ import { uiIcon } from "../ui-icons.js";
 import type { PanelRoute } from "../watch-pages/hook.js";
 
 export const WATCH_ROOMS_PATH = "/rooms";
+/** Point control: the same editor and record as Rooms, on its own tab, so
+ * Rooms is only about pages. */
+export const WATCH_POINT_PATH = "/point";
+
+/** Which half of the editor a route shows. */
+export type RoomsEditorMode = "rooms" | "point";
 
 export function isWatchRoomsRoute(route: PanelRoute | undefined): boolean {
   const path = route?.path ?? "";
   return path === WATCH_ROOMS_PATH || path.startsWith(`${WATCH_ROOMS_PATH}/`);
 }
 
+export function isWatchPointRoute(route: PanelRoute | undefined): boolean {
+  const path = route?.path ?? "";
+  return path === WATCH_POINT_PATH || path.startsWith(`${WATCH_POINT_PATH}/`);
+}
+
 /** The watch a link opens the editor on: the first segment after `/rooms/`,
  * decoded. None, or one that does not decode, gives nothing. */
 export function watchRoomsRouteOwner(route: PanelRoute | undefined): string | undefined {
+  return routeOwnerAfter(route, WATCH_ROOMS_PATH);
+}
+
+/** The same after `/point/`. */
+export function watchPointRouteOwner(route: PanelRoute | undefined): string | undefined {
+  return routeOwnerAfter(route, WATCH_POINT_PATH);
+}
+
+function routeOwnerAfter(route: PanelRoute | undefined, base: string): string | undefined {
   const path = route?.path ?? "";
-  const lead = `${WATCH_ROOMS_PATH}/`;
+  const lead = `${base}/`;
   if (!path.startsWith(lead)) return undefined;
   const segment = path.slice(lead.length).split("/")[0] ?? "";
   if (segment === "") return undefined;
@@ -36,6 +56,17 @@ export function watchRoomsRouteOwner(route: PanelRoute | undefined): string | un
   } catch {
     return undefined;
   }
+}
+
+/** From Rooms to Point control or back, on the same device: the address's
+ * `/rooms` or `/point` segment swapped, as Home Assistant's frontend moves. */
+export function switchRoomsMode(to: RoomsEditorMode): void {
+  const path = window.location.pathname;
+  const from = to === "point" ? WATCH_ROOMS_PATH : WATCH_POINT_PATH;
+  const next = path.replace(new RegExp(`${from}(/|$)`), `${to === "point" ? WATCH_POINT_PATH : WATCH_ROOMS_PATH}$1`);
+  if (next === path) return;
+  history.pushState(null, "", next);
+  window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: false } }));
 }
 
 /** The panel's own address, with or without the editor's sub-path. Without a
@@ -122,6 +153,8 @@ export interface WatchRoomsViewInput {
    * in (`head-bar.ts`). Left out, the bar is drawn on top of the editor. */
   barHost?: HTMLElement;
   onLoaded: () => void;
+  /** Rooms (the default) or Point control. */
+  mode?: RoomsEditorMode;
 }
 
 /** The whole panel while the route is `/rooms`: the editor, which draws its
@@ -136,7 +169,7 @@ export function renderWatchRoomsView(input: WatchRoomsViewInput): TemplateResult
       ? html`<wa-rooms-editor .hass=${input.hass} .owners=${input.owners} .ownerId=${input.ownerId}
           .icons=${input.icons} .iconsTick=${input.iconsTick} ?narrow=${input.narrow} .haMenu=${input.menu} .onHaMenu=${input.onMenu} .onBack=${input.onBack}
           .barActions=${input.actions} .shellOwnsWatch=${input.shell === true} .barHost=${input.barHost}
-          .phones=${input.phones === true}></wa-rooms-editor>`
+          .phones=${input.phones === true} .mode=${input.mode ?? "rooms"}></wa-rooms-editor>`
       : html`<div class="wp-loading">
           ${input.shell === true ? nothing : html`<button class="tb-btn tb-back" title="Back to complications" @click=${input.onBack}>${uiIcon("left")}<span>Complications</span></button>`}
           ${loadFailed ? html`<span>The Rooms editor did not load. Reload the page to try again.</span>` : html`<span>Loading…</span>`}

@@ -111,7 +111,7 @@ describe("deviceSheetTabs", () => {
   const labels = (kind: "watch" | "iphone") => deviceSheetTabs(kind).map((t) => t.label);
 
   it("gives a watch its Pages, complications, its other screens, its Control Center controls and Settings last, never the home's shared screens or the retired Control Center screen", () => {
-    expect(labels("watch")).toEqual(["Pages", "Complications", "Menus", "Status pages", "Control Center", "Rooms", "Voice", "Settings"]);
+    expect(labels("watch")).toEqual(["Pages", "Complications", "Menus", "Status pages", "Control Center", "Rooms", "Point control", "Voice", "Settings"]);
     expect(deviceSheetTabs("watch")[4]).toEqual({ kind: "list", label: "Control Center", filter: "control" });
     expect(deviceSheetTabs("watch").some((t) => t.kind === "screen" && t.screen.id === "control-center")).toBe(false);
   });
@@ -125,10 +125,10 @@ describe("deviceSheetTabs", () => {
 
   it("gives an iPhone every iPhone app screen around its widgets and controls on a home with phone pages, in the watch's order", () => {
     const tabs = deviceSheetTabs("iphone", true);
-    expect(tabs.map((t) => t.label)).toEqual(["Pages", "Widgets", "Menus", "Status pages", "Control Center", "Rooms", "Settings"]);
+    expect(tabs.map((t) => t.label)).toEqual(["Pages", "Widgets", "Menus", "Status pages", "Control Center", "Rooms", "Point control", "Settings"]);
     expect(tabs[0]).toMatchObject({ kind: "screen", count: "pages" });
-    expect(tabs[6]).toMatchObject({ kind: "screen" });
-    expect(tabs[6]).not.toHaveProperty("count");
+    expect(tabs[7]).toMatchObject({ kind: "screen" });
+    expect(tabs[7]).not.toHaveProperty("count");
     expect(deviceSheetTabs("watch", true)).toEqual(deviceSheetTabs("watch"));
   });
 

@@ -57,7 +57,7 @@ import { WATCH_HTTP_ACTIONS_PATH } from "../src/watch-http-actions/hook.js";
 import { watchMenusRouteOwner } from "../src/watch-menus/hook.js";
 import { watchPagesRouteOwner } from "../src/watch-pages/hook.js";
 import { watchRouteOwner } from "../src/watch-pick.js";
-import { watchRoomsRouteOwner } from "../src/watch-rooms/hook.js";
+import { watchPointRouteOwner, watchRoomsRouteOwner } from "../src/watch-rooms/hook.js";
 import { watchStatusPagesRouteOwner } from "../src/watch-status-pages/hook.js";
 import { watchVoiceRouteOwner } from "../src/watch-voice/hook.js";
 
@@ -112,7 +112,7 @@ describe("tabOfRoute", () => {
 
 describe("iPhone app screens", () => {
   it("are Pages, Menus, Status pages and Rooms in the watch row's order, with Settings apart", () => {
-    expect(IPHONE_SCREENS.map((s) => s.label)).toEqual(["Pages", "Menus", "Status pages", "Rooms"]);
+    expect(IPHONE_SCREENS.map((s) => s.label)).toEqual(["Pages", "Menus", "Status pages", "Rooms", "Point control"]);
     expect(iphoneScreenOf(at("/iphone/settings/p1"))).toBe(WATCH_SETTINGS_SCREEN);
   });
 
@@ -148,8 +148,8 @@ describe("iPhone app screens", () => {
 });
 
 describe("watch screens", () => {
-  it("lists the ten screens in Home's order", () => {
-    expect(WATCH_SCREENS.map((s) => s.label)).toEqual(["Pages", "Menus", "Status pages", "Control Center", "Rooms", "Voice", "Complications", "HTTP actions", "Camera framing", "Home map"]);
+  it("lists the eleven screens in Home's order", () => {
+    expect(WATCH_SCREENS.map((s) => s.label)).toEqual(["Pages", "Menus", "Status pages", "Control Center", "Rooms", "Point control", "Voice", "Complications", "HTTP actions", "Camera framing", "Home map"]);
   });
 
   it("finds the screen a route is on", () => {
@@ -163,7 +163,7 @@ describe("watch screens", () => {
 
   it("builds an address each screen's own reader gives the watch back from", () => {
     const readers = [watchPagesRouteOwner, watchMenusRouteOwner, watchStatusPagesRouteOwner,
-      watchControlCenterRouteOwner, watchRoomsRouteOwner, watchVoiceRouteOwner, watchComplicationsRouteOwner];
+      watchControlCenterRouteOwner, watchRoomsRouteOwner, watchPointRouteOwner, watchVoiceRouteOwner, watchComplicationsRouteOwner];
     const own = WATCH_SCREENS.filter((screen) => screen.shared !== true);
     expect(own).toHaveLength(readers.length);
     own.forEach((screen, i) => {
@@ -196,12 +196,12 @@ describe("watch screens", () => {
       id: "cameras", label: "Camera framing", blurb: "sets how each camera's picture is framed in alerts, the same on the watch and the phone.",
       path: WATCH_CAMERAS_PATH, shared: true,
     });
-    expect(watchScreenOf(at("/cameras"))).toBe(WATCH_SCREENS[8]);
+    expect(watchScreenOf(at("/cameras"))).toBe(WATCH_SCREENS[9]);
     // The Home map needs the integration's `home_map`, which Home's Library
     // checks before listing it.
     // One pre-release word for it everywhere: BETA.
     expect(WATCH_SCREENS.at(-1)).toMatchObject({ id: "home-map", label: "Home map", path: HOME_MAP_PATH, shared: true, beta: "alpha", capability: "home_map" });
-    expect(watchScreenOf(at("/home-map"))).toBe(WATCH_SCREENS[9]);
+    expect(watchScreenOf(at("/home-map"))).toBe(WATCH_SCREENS[10]);
   });
 
   it("writes each blurb to follow the screen's name as one plain sentence", () => {

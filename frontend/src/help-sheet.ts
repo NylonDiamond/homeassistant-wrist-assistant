@@ -115,6 +115,7 @@ const SCREEN_GUIDES: Partial<Record<WatchScreen["id"], string>> = {
   "status-pages": WATCH_STATUS_PAGES_HELP_URL,
   "control-center": WATCH_CONTROL_CENTER_HELP_URL,
   "rooms": WATCH_ROOMS_HELP_URL,
+  "point": WATCH_ROOMS_HELP_URL,
   "voice": WATCH_VOICE_HELP_URL,
   "http-actions": WATCH_HTTP_ACTIONS_HELP_URL,
   "cameras": WATCH_CAMERAS_HELP_URL,

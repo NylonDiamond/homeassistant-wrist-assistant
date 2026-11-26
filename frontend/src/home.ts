@@ -521,7 +521,8 @@ const SCREEN_DOORS: Partial<Record<WatchScreen["id"] | "settings", HomeDoorLook>
   "menus": { icon: "radial", hue: "var(--wa-hue-orange)", blurb: "The quick menus and the page switcher." },
   "status-pages": { icon: "checklist", hue: "var(--wa-hue-yellow)", blurb: "Lists to read at a glance." },
   "watch-complications": { icon: "gauge", hue: "var(--wa-hue-blue)", blurb: "On this watch’s faces." },
-  "rooms": { icon: "home", hue: "var(--wa-hue-pink)", blurb: "Room pages and point control." },
+  "rooms": { icon: "home", hue: "var(--wa-hue-pink)", blurb: "A page for each room." },
+  "point": { icon: "tap", hue: "var(--wa-hue-pink)", blurb: "Point at a lamp to control it." },
   "voice": { icon: "mic", hue: "var(--wa-hue-red)", blurb: "How the watch listens and speaks." },
   "settings": { icon: "sliders", hue: "var(--wa-hue-grey)", blurb: "Gestures, wrist twists and how it connects." },
 };

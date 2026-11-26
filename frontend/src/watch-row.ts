@@ -122,7 +122,7 @@ export interface WatchRowLink {
 }
 
 /** A device's own screens, in the row's order. An iPhone has no Voice. */
-export const ROW_OWN_SCREENS: readonly ListOwnScreen[] = ["settings", "rooms", "voice"];
+export const ROW_OWN_SCREENS: readonly ListOwnScreen[] = ["settings", "rooms", "point", "voice"];
 
 const ownScreen = (id: ListOwnScreen): WatchScreen =>
   id === "settings" ? WATCH_SETTINGS_SCREEN : WATCH_SCREENS.find((screen) => screen.id === id)!;
@@ -327,6 +327,7 @@ export const WATCH_SCREEN_LOOK: Record<WatchScreenId, { icon: UiIconName; hue: s
   "status-pages": { icon: "checklist", hue: "var(--wa-hue-yellow)" },
   "control-center": { icon: "tap", hue: "var(--wa-hue-orange)" },
   "rooms": { icon: "home", hue: "var(--wa-hue-pink)" },
+  "point": { icon: "tap", hue: "var(--wa-hue-pink)" },
   "voice": { icon: "mic", hue: "var(--wa-hue-red)" },
   "watch-complications": { icon: "gauge", hue: "var(--wa-hue-blue)" },
   "http-actions": { icon: "globe", hue: "var(--wa-hue-blue)" },

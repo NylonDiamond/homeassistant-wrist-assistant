@@ -61,7 +61,7 @@ import {
   roomFromState,
   wrapHeading,
 } from "../src/watch-rooms/rules.js";
-import { type RoomsViewHost, AIM_LABEL, BERMUDA_PITCH, BERMUDA_URL, HEADING_HELP_DETAIL, NO_SENSOR_TEXT, headingAt, introShown, introSteps, isBermudaSensor, listedRooms, offeredAreas, pickedRoom, pointSummary, renderRoomsBody, roomGroups, roomPointLine, roomsViewStyles, rulesOffLine, sensorReading, switchingLine } from "../src/watch-rooms/view.js";
+import { type RoomsViewHost, AIM_LABEL, BERMUDA_PITCH, BERMUDA_URL, HEADING_HELP_DETAIL, NO_SENSOR_TEXT, headingAt, foldedListLine, introShown, introSteps, isBermudaSensor, listUnused, pointSensorLine, listedRooms, offeredAreas, pickedRoom, pointSummary, renderRoomsBody, roomGroups, roomPointLine, roomsViewStyles, rulesOffLine, sensorReading, switchingLine } from "../src/watch-rooms/view.js";
 import { phonePagesLayout } from "../src/phone-frame.js";
 
 const flat = (v: unknown): string => {
@@ -644,7 +644,8 @@ describe("the cards", () => {
   }
 
   it("draw the four cards with what the document says", () => {
-    const text = flat(renderRoomsBody(host(behavior())));
+    const h = host(behavior());
+    const text = flat(renderRoomsBody(h)) + flat(renderRoomsBody({ ...h, mode: "point" }));
     for (const title of ["Room sensor", "Switch pages by room", "Point control", "When I walk into", "the watch opens", "Anywhere else"]) expect(text).toContain(title);
     expect(text).toContain("The watch opens a room's page when the room sensor says you walked in.");
     expect(text).toContain("Automatic");
@@ -665,7 +666,7 @@ describe("the cards", () => {
   });
 
   it("say so when the targets cannot be read", () => {
-    const text = flat(renderRoomsBody(host(behavior({ pointControlRoomMappingsJSON: "not json" }))));
+    const text = flat(renderRoomsBody({ ...host(behavior({ pointControlRoomMappingsJSON: "not json" })), mode: "point" }));
     expect(text).toContain("cannot be read");
   });
 });
@@ -742,9 +743,6 @@ describe("the list, the stage and the inspector", () => {
   it("say what each room opens and how many things to point at", () => {
     const h = host(behavior(), { added: ["Office"] });
     const [kitchen, den, office] = listedRooms(h);
-    // Folded, the rooms read as pages alone.
-    expect(roomPointLine(h, kitchen!)).toBe("");
-    h.uiState.set("pointOpen", true);
     expect(roomPointLine(h, kitchen!)).toBe("1 thing to point at");
     expect(roomPointLine(h, den!)).toBe("");
     expect(roomPointLine(h, office!)).toBe("");
@@ -786,34 +784,31 @@ describe("the list, the stage and the inspector", () => {
   it("draw the picked room on the stage, and its targets only in the open point control", () => {
     const h = host(behavior());
     const folded = flat(renderRoomsBody(h));
-    for (const s of ["What the watch opens in Kitchen", "Preview", "Click a room to see what the watch opens there.", "Remove Kitchen", "Point control", "1 thing in 1 room."]) {
+    for (const s of ["What the watch opens in Kitchen", "Preview", "Click a room to see what the watch opens there.", "Remove Kitchen"]) {
       expect(folded).toContain(s);
     }
-    expect(folded).not.toContain("Pendant / Bar");
-    h.uiState.set("pointOpen", true);
-    const text = flat(renderRoomsBody(h));
-    for (const s of ["Room for point control", "Pendant / Bar", "° E", "+ Add a thing", "Tap to Toggle", "Live Point Control Tile"]) expect(text).toContain(s);
+    // Point control is its own tab now: nothing of it on Rooms.
+    for (const s of ["Pendant / Bar", "Point control", "Room for point control"]) expect(folded).not.toContain(s);
+    const text = flat(renderRoomsBody({ ...h, mode: "point" }));
+    for (const s of ["Room for point control", "Pendant / Bar", "° E", "+ Add a thing", "Tap to Toggle", "Live Point Control Tile", "1 thing in 1 room.", "Kitchen, 1 thing to point at"]) expect(text).toContain(s);
     expect(text).toContain(`title=${HEADING_HELP_DETAIL}`);
     expect(HEADING_HELP_DETAIL).toContain("hold the iPhone flat with its top edge toward the device and choose Set Direction.");
     expect(HEADING_HELP_DETAIL).not.toContain("Connection Health");
     h.uiState.set("pick", "living room");
-    const den = flat(renderRoomsBody(h));
-    expect(den).toContain("What the watch opens in Living Room");
-    expect(den).not.toContain("Pendant / Bar");
+    expect(flat(renderRoomsBody(h))).toContain("What the watch opens in Living Room");
+    expect(flat(renderRoomsBody({ ...h, mode: "point" }))).not.toContain("Pendant / Bar");
   });
 
   it("offer How you aim beside the switches on the main home, with the picked one's detail", () => {
     const [face, point] = ROOM_RULES.pointControl.aim.options;
     const h = host(behavior());
     expect(flat(renderRoomsBody(h))).not.toContain(AIM_LABEL);
-    h.uiState.set("pointOpen", true);
-    const text = flat(renderRoomsBody(h));
+    const text = flat(renderRoomsBody({ ...h, mode: "point" }));
     for (const s of [AIM_LABEL, "Raise Wrist", "Point Finger", face!.detail]) expect(text).toContain(s);
     expect(text).not.toContain(point!.detail);
     expect(text.indexOf(AIM_LABEL)).toBeLessThan(text.indexOf("Tap to Toggle"));
     const pointed = host(behavior({ pointControlAim: "point" }));
-    pointed.uiState.set("pointOpen", true);
-    const ptext = flat(renderRoomsBody(pointed));
+    const ptext = flat(renderRoomsBody({ ...pointed, mode: "point" }));
     expect(ptext).toContain(point!.detail);
     expect(ptext).not.toContain(face!.detail);
   });
@@ -831,8 +826,7 @@ describe("the list, the stage and the inspector", () => {
 
   it("keep the other home's own switch and say the rest is the main home's", () => {
     const h = host(behavior(), { home: true });
-    h.uiState.set("pointOpen", true);
-    const text = flat(renderRoomsBody(h));
+    const text = flat(renderRoomsBody(h)) + flat(renderRoomsBody({ ...h, mode: "point" }));
     expect(text).toContain("Switch automatically");
     expect(text.split(HOME_ROOMS_MAIN_HOUSE_TEXT)).toHaveLength(2);
     expect(text).toContain("Things to point at");
@@ -948,12 +942,24 @@ describe("the Rooms tab explains itself", () => {
     const off = host(behavior({ roomAutoSwitchEnabled: false, roomQuickJumpEnabled: false, topSectionDoubleTapAction: "Disabled", handGestureAction: "Refresh" }));
     expect(off.view.switching).toBe(false);
     expect(switchingLine(off)).toBe("Room pages are off. Turn on Switch pages by room to use the pages below.");
+    // Nothing reads the list, so it folds to one line; opened, it says why.
     const text = flat(renderRoomsBody(off));
-    expect(text).toContain(rulesOffLine(off));
+    expect(text).toContain(foldedListLine(off, listedRooms(off)));
+    expect(text).not.toContain("Page for Kitchen");
     expect(text).not.toContain("opens a room's page when the room sensor says");
+    off.uiState.set("listOpen", true);
+    const opened = flat(renderRoomsBody(off));
+    expect(opened).toContain(rulesOffLine(off));
+    expect(rulesOffLine(off)).toBe("Nothing opens these pages until you turn on Switch pages by room at the top.");
+    expect(opened).toContain("Page for Kitchen");
     const phoneOff = host({ schemaVersion: 1 }, { home: true, phone: true });
     expect(switchingLine(phoneOff)).toBe("Switch automatically is off, so the iPhone does not change pages when you walk in.");
-    expect(rulesOffLine(phoneOff)).toBe("Switch automatically is off. These pages still open with Room Jump.");
+    expect(rulesOffLine(phoneOff)).toBe("Nothing opens these pages until you turn on Switch automatically at the top.");
+    expect(listUnused(phoneOff)).toBe(true);
+    // A watch on another home may still Room Jump with its main home's gesture.
+    const watchOff = host({ schemaVersion: 1 }, { home: true });
+    expect(listUnused(watchOff)).toBe(false);
+    expect(rulesOffLine(watchOff)).toBe("Switch automatically is off. These pages still open with Room Jump.");
     const phoneOn = host({ schemaVersion: 1, roomAutoSwitchEnabled: true }, { home: true, phone: true });
     expect(switchingLine(phoneOn)).toBe("The iPhone opens a room's page when the room sensor says you walked in.");
     expect(flat(renderRoomsBody(phoneOn))).not.toContain(rulesOffLine(phoneOn));
@@ -982,7 +988,12 @@ describe("the Rooms tab explains itself", () => {
     const text = flat(renderRoomsBody(h));
     expect(text).toContain("wa-phone");
     expect(text).not.toContain("wa-watch");
-    expect(text).toContain("Point the iPhone at a lamp");
+    const point = flat(renderRoomsBody({ ...h, mode: "point" }));
+    expect(point).toContain("Point the iPhone at a lamp");
+    expect(point).toContain("Open Rooms");
+    expect(point).toContain(pointSensorLine(h));
+    expect(pointSensorLine(h)).toMatch(/^The iPhone knows the room from the room sensor in Rooms: /);
+    expect(pointSensorLine({ ...h, view: { ...h.view, sensor: "" } })).toBe("Pick a room sensor in Rooms first, so the iPhone knows which room you are in.");
   });
 
   it("writes every new line without a dash", () => {

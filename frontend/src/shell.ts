@@ -76,7 +76,7 @@ import { ALL_MENUS_PATH } from "./watch-menus/all-menus-hook.js";
 import { WATCH_MENUS_PATH, isWatchMenusRoute } from "./watch-menus/hook.js";
 import { ALL_PAGES_PATH, ALL_STATUS_PAGES_PATH, listFocusPath } from "./watch-pages/all-pages-hook.js";
 import { type PanelRoute, WATCH_PAGES_PATH, isWatchPagesRoute } from "./watch-pages/hook.js";
-import { WATCH_ROOMS_PATH, isWatchRoomsRoute } from "./watch-rooms/hook.js";
+import { WATCH_POINT_PATH, WATCH_ROOMS_PATH, isWatchPointRoute, isWatchRoomsRoute } from "./watch-rooms/hook.js";
 import { WATCH_SETTINGS_PATH, isWatchSettingsRoute } from "./watch-settings-page.js";
 import { WATCH_STATUS_PAGES_PATH, isWatchStatusPagesRoute } from "./watch-status-pages/hook.js";
 import { WATCH_VOICE_PATH, isWatchVoiceRoute } from "./watch-voice/hook.js";
@@ -145,7 +145,7 @@ export const TAB_LABEL: Record<PanelTab, string> = {
 /** One of the watch app's screens, as Home lists them and the watch row
  * walks them. */
 export interface WatchScreen {
-  id: "pages" | "menus" | "status-pages" | "control-center" | "rooms" | "voice" | "watch-complications" | "http-actions" | "cameras" | "home-map" | "settings";
+  id: "pages" | "menus" | "status-pages" | "control-center" | "rooms" | "point" | "voice" | "watch-complications" | "http-actions" | "cameras" | "home-map" | "settings";
   label: string;
   /** What the screen is, written to follow its name as one sentence: the
    * Watch app row's line under it reads "**Pages** are the screens you swipe
@@ -179,7 +179,8 @@ export const WATCH_SCREENS: readonly WatchScreen[] = [
   { id: "menus", label: "Menus", blurb: "are the quick menus on the watch: the Anywhere menu, a menu for each kind of entity and the page switcher.", get phoneBlurb() { return generalCopy("are the quick menus on the iPhone: the Anywhere menu, a menu for each kind of entity and the page switcher.", "are the quick menus on the phone: the Anywhere menu, a menu for each kind of entity and the page switcher."); }, path: WATCH_MENUS_PATH },
   { id: "status-pages", label: "Status pages", get blurb() { return generalCopy("are lists to read at a glance, like the lights that are on or low batteries, opened from a tile, a menu or Siri.", "are lists to read at a glance, like the lights that are on or low batteries, opened from a tile, a menu or, on Apple devices, Siri."); }, path: WATCH_STATUS_PAGES_PATH },
   { id: "control-center", label: "Control Center", blurb: "The list of controls", path: WATCH_CONTROL_CENTER_PATH, retired: true },
-  { id: "rooms", label: "Rooms", blurb: "let the watch open a room's page when you are in that room, and set up point control: point the watch at a thing to control it.", get phoneBlurb() { return generalCopy("let the iPhone open a room's page when you are in that room.", "let the phone open a room's page when you are in that room."); }, path: WATCH_ROOMS_PATH },
+  { id: "rooms", label: "Rooms", blurb: "let the watch open a room's page when you are in that room.", get phoneBlurb() { return generalCopy("let the iPhone open a room's page when you are in that room.", "let the phone open a room's page when you are in that room."); }, path: WATCH_ROOMS_PATH },
+  { id: "point", label: "Point control", blurb: "lets you point the watch at a lamp or a switch to control it.", get phoneBlurb() { return generalCopy("lets you point the iPhone at a lamp or a switch to control it.", "lets you point the phone at a lamp or a switch to control it."); }, path: WATCH_POINT_PATH },
   { id: "voice", label: "Voice", blurb: "sets how the watch listens and speaks: the Assist and Speak defaults, your saved phrases and the watch voice.", path: WATCH_VOICE_PATH },
   { id: "watch-complications", label: "Complications", blurb: "are what this watch's faces show, with every other design you could add under them, made in the Complications tab.", path: WATCH_COMPLICATIONS_PATH },
   { id: "http-actions", label: "HTTP actions", get blurb() { return generalCopy("are web requests Home Assistant sends when a watch or an iPhone runs one from a tile, a menu or a complication, shared by every watch and iPhone.", "are web requests Home Assistant sends when a watch or a phone runs one from a tile, a menu or a complication, shared by every watch and phone."); }, path: WATCH_HTTP_ACTIONS_PATH, shared: true },
@@ -220,6 +221,7 @@ export function watchScreenOf(route: PanelRoute | undefined): WatchScreen | unde
   if (isWatchStatusPagesRoute(route)) return of("status-pages");
   if (isWatchControlCenterRoute(route)) return of("control-center");
   if (isWatchRoomsRoute(route)) return of("rooms");
+  if (isWatchPointRoute(route)) return of("point");
   if (isWatchVoiceRoute(route)) return of("voice");
   if (isWatchComplicationsRoute(route)) return of("watch-complications");
   if (isWatchHttpActionsRoute(route)) return of("http-actions");
@@ -231,7 +233,7 @@ export function watchScreenOf(route: PanelRoute | undefined): WatchScreen | unde
 
 /** The screens an iPhone has: the four kinds it keeps, and Settings for the
  * settings that make sense on a phone. */
-const IPHONE_SCREEN_IDS: ReadonlySet<WatchScreen["id"]> = new Set(["pages", "menus", "status-pages", "rooms", "settings"]);
+const IPHONE_SCREEN_IDS: ReadonlySet<WatchScreen["id"]> = new Set(["pages", "menus", "status-pages", "rooms", "point", "settings"]);
 
 /** Whether a screen edits an iPhone too. */
 export function screenTakesPhone(screen: Pick<WatchScreen, "id">): boolean {
@@ -407,6 +409,7 @@ export function barTabOfScreen(id: WatchScreen["id"]): BarTab {
     case "cameras": return "shared";
     case "home-map": return "home-map";
     case "rooms":
+    case "point":
     case "voice":
     case "settings": return "home";
   }
@@ -499,7 +502,7 @@ export function redirectPath(route: PanelRoute | undefined): string | undefined 
 const SUB_PATH = new RegExp(`(${[
   ...BAR_TABS.map((t) => t.path),
   LIBRARY_PATH, IPHONE_PATH, WATCH_PAGES_PATH, WATCH_MENUS_PATH, WATCH_VOICE_PATH,
-  WATCH_STATUS_PAGES_PATH, WATCH_CONTROL_CENTER_PATH, WATCH_ROOMS_PATH, WATCH_HTTP_ACTIONS_PATH, WATCH_CAMERAS_PATH, WATCH_SETTINGS_PATH,
+  WATCH_STATUS_PAGES_PATH, WATCH_CONTROL_CENTER_PATH, WATCH_ROOMS_PATH, WATCH_POINT_PATH, WATCH_HTTP_ACTIONS_PATH, WATCH_CAMERAS_PATH, WATCH_SETTINGS_PATH,
   WATCH_COMPLICATIONS_PATH, HOME_MAP_PATH,
 ].join("|")})(/.*)?$`);
 

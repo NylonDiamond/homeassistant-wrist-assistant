@@ -6676,7 +6676,8 @@ export class WristAssistantPanel extends LitElement {
       case "pages": return { dirty: watchPagesDirty(), drop: dropWatchPagesDrafts, saves: watchPagesSavesDone() };
       case "menus": return { dirty: watchMenusDirty(), drop: dropWatchMenusDrafts };
       case "status-pages": return { dirty: watchStatusPagesDirty(), drop: dropWatchStatusPagesDrafts, saves: watchStatusPagesSavesDone() };
-      case "rooms": return { dirty: watchRoomsDirty(), drop: dropWatchRoomsDrafts };
+      case "rooms":
+      case "point": return { dirty: watchRoomsDirty(), drop: dropWatchRoomsDrafts };
       case "voice": return { dirty: watchVoiceDirty(), drop: dropWatchVoiceDrafts };
       case "http-actions": return { dirty: watchHttpActionsDirty(), drop: dropWatchHttpActionsDrafts };
       case "cameras": return { dirty: watchCamerasDirty(), drop: dropWatchCamerasDrafts };
@@ -11961,8 +11962,11 @@ export class WristAssistantPanel extends LitElement {
         onLoaded: () => this.requestUpdate(),
       });
       // The Rooms editor likewise, on `/rooms` and `/rooms/<owner_watch_id>`.
-      case "rooms": return renderWatchRoomsView({
+      // Point control is the same editor on `/point`, showing its other half.
+      case "rooms":
+      case "point": return renderWatchRoomsView({
         hass: this.hass, owners: this.owners, ownerId: owner, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
+        mode: id,
         menu: false,
         onMenu: () => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })),
         onBack: () => this.goTo(COMPLICATIONS_PATH),

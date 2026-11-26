@@ -303,8 +303,11 @@ describe("the cards on a home that is not the main house", () => {
     };
   }
 
+  // Rooms and Point control are one record on two tabs: both, read together.
+  const bothTabs = (h: RoomsViewHost): string => flatten(renderRoomsBody(h)) + flatten(renderRoomsBody({ ...h, mode: "point" }));
+
   it("hide the four main house keys behind one line", () => {
-    const text = flatten(renderRoomsBody(host(homeRooms(), true)));
+    const text = bothTabs(host(homeRooms(), true));
     expect(text).toContain(HOME_ROOMS_MAIN_HOUSE_TEXT);
     expect(text.split(HOME_ROOMS_MAIN_HOUSE_TEXT)).toHaveLength(2);
     // Point control stays (its targets are this home's own); its two
@@ -321,7 +324,7 @@ describe("the cards on a home that is not the main house", () => {
   });
 
   it("leave the main house's four cards as they were", () => {
-    const text = flatten(renderRoomsBody(host(homeRooms(), false)));
+    const text = bothTabs(host(homeRooms(), false));
     expect(text).not.toContain(HOME_ROOMS_MAIN_HOUSE_TEXT);
     for (const title of ["Room sensor", "Switch pages by room", "Point control", "Tap to Toggle", AIM_LABEL, "Raise Wrist", "Point Finger", "When I walk into"]) expect(text).toContain(title);
     expect(text).not.toContain(HOME_AUTO_SWITCH_LABEL);
@@ -329,7 +332,7 @@ describe("the cards on a home that is not the main house", () => {
 
   it("never offer How you aim on an iPhone or an Android phone", () => {
     for (const extra of [{ phone: true }, { phone: true, android: true }]) {
-      const text = flatten(renderRoomsBody({ ...host(homeRooms(), true), ...extra }));
+      const text = bothTabs({ ...host(homeRooms(), true), ...extra });
       expect(text).toContain("Things to point at");
       for (const gone of [AIM_LABEL, "Raise Wrist", "Point Finger", "Tap to Toggle"]) expect(text).not.toContain(gone);
     }
