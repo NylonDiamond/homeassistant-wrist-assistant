@@ -147,7 +147,7 @@ import {
   settingsStartedFresh,
   startSettingsFresh,
 } from "./watch-settings-draft.js";
-import { settingsCanSave, settingsPageStep } from "./watch-settings-page.js";
+import { settingsCanSave, settingsPageStep, takeSettingsSearch } from "./watch-settings-page.js";
 import { demoPicture } from "./watch-settings-demo.js";
 import { type TileChoice, WATCH_SETTING_LOOK, domainTiles, gestureIcon, optionPreview, settingIcon, tileChoices, usesTiles } from "./watch-settings-look.js";
 import { type SettingsCardId, type SettingsGroup, SETTINGS_GROUPS, groupOfCard, matchesSearch, searchTerms, settingsGroup } from "./watch-settings-nav.js";
@@ -1006,6 +1006,8 @@ export class WatchSettings implements ReactiveController {
    */
   render(hass: HassLike, owners: readonly OwnerSummary[], options: { narrow?: boolean; inHead?: boolean } = {}): TemplateResult {
     this.hass = hass;
+    const asked = takeSettingsSearch();
+    if (asked !== undefined) this.query = asked;
     const watches = watchAppDevices(owners, this.phones);
     const owner = watches.find((w) => w.owner_watch_id === this.ownerId);
     this.shownOwner = owner;

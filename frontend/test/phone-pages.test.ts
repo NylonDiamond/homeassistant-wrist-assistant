@@ -95,7 +95,7 @@ describe("iPhone settings", () => {
     const sections = catalogFor("iphone");
     expect(sections.map((s) => s.id)).toEqual(["gestures", "navigation", "controls", "camera"]);
     const settings = sections.flatMap((s) => s.settings);
-    expect(settings).toHaveLength(32);
+    expect(settings).toHaveLength(35);
     expect(settings.every((s) => s.devices?.includes("iphone"))).toBe(true);
     // The Page look leads the iPhone's Pages card.
     expect(sections.find((s) => s.id === "navigation")!.settings[0]!.key).toBe("phonePageLook");
@@ -108,11 +108,14 @@ describe("iPhone settings", () => {
     expect(catalogFor("watch")).toEqual(withoutLook);
   });
 
-  it("leave out the watch only title double tap and Point Control label", () => {
-    const keys = catalogFor("iphone").flatMap((s) => s.settings).map((s) => s.key);
-    for (const key of ["topSectionDoubleTapAction", "topSectionDoubleTapSceneTargetId", "topSectionDoubleTapScriptTargetId", "pointControlShowHUD"]) {
-      expect(keys).not.toContain(key);
-    }
+  it("give the iPhone the title double-tap without the watch's choices, and leave out the Point Control label", () => {
+    const settings = catalogFor("iphone").flatMap((s) => s.settings);
+    const keys = settings.map((s) => s.key);
+    for (const key of ["topSectionDoubleTapAction", "topSectionDoubleTapSceneTargetId", "topSectionDoubleTapScriptTargetId"]) expect(keys).toContain(key);
+    expect(keys).not.toContain("pointControlShowHUD");
+    const tap = settings.find((s) => s.key === "topSectionDoubleTapAction")!;
+    expect(tap.options!.map((o) => o.value)).toEqual(["Disabled", "Room Jump", "Activate Scene", "Run Script", "Refresh", "Next Page", "Previous Page", "Toggle First Tile"]);
+    expect(tap.help).toBe("Tap the page's name at the top twice. It works while Page name is set to Show.");
   });
 
   it("show the dots' look and the popup background only with the Watch look", () => {

@@ -188,14 +188,16 @@ describe("the catalog", () => {
 
   // The integration keeps only the `iphone` keys on a phone's settings, and
   // its own copy of that list is held to this file by a Python test.
-  it("says for every row which devices read it: the watch for all but the Page look, the iPhone for 32", () => {
+  it("says for every row which devices read it: the watch for all but the Page look, the iPhone for 35", () => {
     for (const s of settings) {
       expect(s.devices, s.key).toBeDefined();
       // The Android apps read the same rows: a Wear OS watch every watch row
       // but the double pinch, an Android phone every iPhone row but the Page look.
-      expect([["watch"], ["watch", "wearos"], ["watch", "iphone", "wearos", "android"], ["iphone"]], s.key).toContainEqual([...s.devices!]);
+      // The title double-tap reached the iPhone (2026-11-26) before the Android phone app.
+      expect([["watch"], ["watch", "wearos"], ["watch", "iphone", "wearos", "android"], ["watch", "iphone", "wearos"], ["iphone"]], s.key).toContainEqual([...s.devices!]);
     }
-    expect(settings.filter((s) => s.devices!.includes("iphone")).length).toBe(32);
+    expect(settings.filter((s) => s.devices!.includes("iphone")).length).toBe(35);
+    expect(settings.filter((s) => s.devices!.join() === "watch,iphone,wearos").map((s) => s.key)).toEqual(["topSectionDoubleTapAction", "topSectionDoubleTapSceneTargetId", "topSectionDoubleTapScriptTargetId"]);
     expect(settings.filter((s) => !s.devices!.includes("watch")).map((s) => s.key)).toEqual(["phonePageLook"]);
     expect(
       settings
@@ -214,9 +216,6 @@ describe("the catalog", () => {
       "pointControlShowHUD",
       "serverMode",
       "sliderCrownSensitivity",
-      "topSectionDoubleTapAction",
-      "topSectionDoubleTapSceneTargetId",
-      "topSectionDoubleTapScriptTargetId",
     ]);
   });
 

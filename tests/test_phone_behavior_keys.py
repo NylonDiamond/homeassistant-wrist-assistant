@@ -55,6 +55,14 @@ def _document_keys(setting: dict) -> set[str]:
     return keys
 
 
+IPHONE_BEFORE_ANDROID = {
+    "phonePageLook",
+    "topSectionDoubleTapAction",
+    "topSectionDoubleTapSceneTargetId",
+    "topSectionDoubleTapScriptTargetId",
+}
+
+
 def test_every_catalog_setting_says_which_devices_read_it() -> None:
     settings = _catalog_settings()
     assert len(settings) == 46
@@ -67,11 +75,14 @@ def test_every_catalog_setting_says_which_devices_read_it() -> None:
             # a watch row (`wearos`), an Android phone an iPhone row (`android`).
             ["watch", "wearos"],
             ["watch", "iphone", "wearos", "android"],
+            # The title double-tap reached the iPhone (2026-11-26) before
+            # the Android phone app.
+            ["watch", "iphone", "wearos"],
         ), setting["key"]
         devices = setting["devices"]
-        # An Android phone reads every iPhone row but the Page look: it
-        # draws its pages one way only.
-        if setting["key"] != "phonePageLook":
+        # An Android phone reads every iPhone row but the Page look, which
+        # it draws one way only, and the title double-tap, not in it yet.
+        if setting["key"] not in IPHONE_BEFORE_ANDROID:
             assert ("android" in devices) == ("iphone" in devices), setting["key"]
 
 
@@ -103,7 +114,7 @@ def test_the_phone_keys_are_the_catalog_s_iphone_keys() -> None:
         if "iphone" in setting["devices"]:
             from_catalog |= _document_keys(setting)
     assert _const_set("PHONE_BEHAVIOR_KEYS") == from_catalog
-    assert len(from_catalog) == 32
+    assert len(from_catalog) == 35
 
 
 def test_no_watch_only_key_is_a_phone_key() -> None:

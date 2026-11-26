@@ -80,6 +80,8 @@ import { NO_ICONS, memoIconNames, watchKeysTypeText } from "../watch-pages/edito
 import { watchPagePreviewStyles } from "../watch-pages/preview.js";
 import { watchFrameStyles } from "../watch-frame.js";
 import { phoneFrameStyles, phoneModelForScreenSize, phonePageLookOf, phonePagesLayout } from "../phone-frame.js";
+import { WATCH_SETTINGS_SCREEN, deviceScreenPath, navigatePanel } from "../shell.js";
+import { askSettingsSearch } from "../watch-settings-page.js";
 import { asWatchPagesDocument } from "../watch-pages/model.js";
 import { type WatchPagesNote, watchCommandError } from "../watch-pages/save-note.js";
 import { friendlyError } from "../friendly-error.js";
@@ -261,6 +263,9 @@ export class WaRoomsEditor extends LitElement {
   @state() private watchId?: string;
   @state() private record?: WatchConfigRecord;
   @state() private pagesRecord?: WatchConfigRecord;
+  /** An iPhone's double-tap on the page title, from its `behavior` record:
+   * whether it jumps to a room. Undefined until read, and on a watch. */
+  @state() private titleJump?: boolean;
   @state() private loading = false;
   @state() private loadError?: string;
   @state() private history: WatchConfigHistoryEntry[] = [];
@@ -492,6 +497,7 @@ export class WaRoomsEditor extends LitElement {
       this.note = undefined;
       this.history = [];
       this.pagesRecord = undefined;
+      this.titleJump = undefined;
       if (this.historyState !== "unsupported") this.historyState = "loading";
       this.closeAsk();
       this.uiState.clear();
@@ -502,6 +508,23 @@ export class WaRoomsEditor extends LitElement {
     this.startSubscription(watchId);
     void this.load(watchId, quiet);
     void this.loadPages(watchId);
+    void this.loadTitleJump(watchId);
+  }
+
+  /** An iPhone's double-tap on the page title, read from its settings, so
+   * Rooms knows whether anything opens its room pages with Switch
+   * automatically off. */
+  private async loadTitleJump(watchId: string): Promise<void> {
+    const hass = this.hass;
+    if (!hass || this.watches.find((w) => w.owner_watch_id === watchId)?.device_kind !== "iphone") return;
+    try {
+      const record = await fetchWatchConfig(hass, watchId, "behavior");
+      if (watchId !== this.watchId) return;
+      const doc = record.document as Record<string, unknown> | null | undefined;
+      this.titleJump = doc?.topSectionDoubleTapAction === "Room Jump";
+    } catch {
+      // Unread, Rooms says what turns the double-tap on and folds nothing for it.
+    }
   }
 
   private async load(watchId: string, quiet = false): Promise<void> {
@@ -782,7 +805,15 @@ export class WaRoomsEditor extends LitElement {
       narrow: this.stacked,
       requestUpdate: () => this.requestUpdate(),
       ...(home ? { home: true } : {}),
-      ...(this.watches.find((w) => w.owner_watch_id === watchId)?.device_kind === "iphone" ? { phone: true, phoneLayout: this.phoneLayout(watchId) } : {}),
+      ...(this.watches.find((w) => w.owner_watch_id === watchId)?.device_kind === "iphone" ? {
+        phone: true,
+        phoneLayout: this.phoneLayout(watchId),
+        ...(this.titleJump === undefined ? {} : { titleJump: this.titleJump }),
+        openSettings: () => {
+          askSettingsSearch("double-tap");
+          navigatePanel(undefined, deviceScreenPath("iphone", WATCH_SETTINGS_SCREEN, watchId));
+        },
+      } : {}),
       ...(androidPlatformOf(this.watches.find((w) => w.owner_watch_id === watchId)) === "android" ? { android: true } : {}),
       ...(androidPlatformOf(this.watches.find((w) => w.owner_watch_id === watchId)) === "wearos" ? { wear: true } : {}),
     };

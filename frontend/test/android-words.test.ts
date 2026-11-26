@@ -214,7 +214,7 @@ describe("a phone's own records and settings", () => {
     expect(HOME_ROOMS_MAIN_HOUSE_WEAR_TEXT).not.toMatch(/pinch/);
     expect(HOME_ROOMS_MAIN_HOUSE_TEXT).toMatch(/double pinch/);
     expect(HOME_ROOMS_ANDROID_TEXT).toBe("On the phone, Switch automatically is the only way these pages open.");
-    expect(HOME_ROOMS_PHONE_TEXT).toBe("On the iPhone, Switch automatically is the only way these pages open.");
+    expect(HOME_ROOMS_PHONE_TEXT).toBe("To jump to your room's page yourself, set Double-tap the page title to Jump to a room in Settings.");
   });
 
   it("speak from the watch on a Wear OS watch, not an Apple Watch", () => {

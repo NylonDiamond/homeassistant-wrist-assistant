@@ -80,14 +80,15 @@
         },
         {
           "key": "topSectionDoubleTapAction",
-          "devices": ["watch", "wearos"],
+          "devices": ["watch", "iphone", "wearos"],
           "type": "enum",
           "label": "Double-tap the page title",
           "help": "Tap the name at the top of a page twice. Switch home needs two or more homes on this watch.",
+          "phoneHelp": "Tap the page's name at the top twice. It works while Page name is set to Show.",
           "default": "Disabled",
           "options": [
             {"value": "Disabled", "label": "Nothing"},
-            {"value": "Toggle Aimed Entity (Point Control)", "label": "Toggle what you point at"},
+            {"value": "Toggle Aimed Entity (Point Control)", "label": "Toggle what you point at", "devices": ["watch", "wearos"]},
             {"value": "Room Jump", "label": "Jump to a room"},
             {"value": "Activate Scene", "label": "Turn on a scene"},
             {"value": "Run Script", "label": "Run a script"},
@@ -95,12 +96,12 @@
             {"value": "Next Page", "label": "Next page"},
             {"value": "Previous Page", "label": "Previous page"},
             {"value": "Toggle First Tile", "label": "Toggle the first tile"},
-            {"value": "Switch Instance", "label": "Switch home"}
+            {"value": "Switch Instance", "label": "Switch home", "devices": ["watch", "wearos"]}
           ]
         },
         {
           "key": "topSectionDoubleTapSceneTargetId",
-          "devices": ["watch", "wearos"],
+          "devices": ["watch", "iphone", "wearos"],
           "type": "entity",
           "domain": "scene",
           "label": "Scene",
@@ -110,7 +111,7 @@
         },
         {
           "key": "topSectionDoubleTapScriptTargetId",
-          "devices": ["watch", "wearos"],
+          "devices": ["watch", "iphone", "wearos"],
           "type": "entity",
           "domain": "script",
           "label": "Script",

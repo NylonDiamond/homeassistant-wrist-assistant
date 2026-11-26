@@ -297,6 +297,9 @@ PHONE_BEHAVIOR_KEYS = frozenset(
         "pullDownAction",
         "pullDownSceneTargetId",
         "pullDownScriptTargetId",
+        "topSectionDoubleTapAction",
+        "topSectionDoubleTapSceneTargetId",
+        "topSectionDoubleTapScriptTargetId",
         "wrapPages",
         "popupBackgroundMaterial",
         # Camera

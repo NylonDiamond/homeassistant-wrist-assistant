@@ -31,6 +31,22 @@ export function watchSettingsRouteOwner(route: PanelRoute | undefined): string |
   }
 }
 
+let askedSearch: string | undefined;
+
+/** Open Settings with these words in its search, for a link from another
+ * screen to one setting (Rooms' Open Settings for the double-tap). The page
+ * takes them the next time it draws. */
+export function askSettingsSearch(words: string): void {
+  askedSearch = words;
+}
+
+/** The words asked for, once: the page clears them as it takes them. */
+export function takeSettingsSearch(): string | undefined {
+  const words = askedSearch;
+  askedSearch = undefined;
+  return words;
+}
+
 /** ⌘S or Ctrl+S on the page: the panel draws it, so the panel saves it.
  * Every other watch screen is an element that saves on the key itself. */
 export function settingsPageSavesOnKey(route: PanelRoute | undefined, e: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey">): boolean {

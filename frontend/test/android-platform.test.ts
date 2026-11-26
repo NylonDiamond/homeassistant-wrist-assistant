@@ -241,11 +241,15 @@ describe("the settings an Android device reads", () => {
     expect(appleCrown.label).toBe("Digital Crown speed");
   });
 
-  it("on an Android phone: every iPhone row but the Page look", () => {
+  it("on an Android phone: every iPhone row but the Page look and the title double-tap", () => {
     const android = keys(catalogFor("iphone", undefined, "android"));
     const iphone = keys(catalogFor("iphone"));
-    expect(iphone).toContain("phonePageLook");
-    expect(android).not.toContain("phonePageLook");
-    expect(iphone.filter((k) => k !== "phonePageLook")).toEqual(android);
+    // The iPhone's title double-tap (2026-11-26) is not in the Android app yet.
+    const iphoneOnly = ["phonePageLook", "topSectionDoubleTapAction", "topSectionDoubleTapSceneTargetId", "topSectionDoubleTapScriptTargetId"];
+    for (const key of iphoneOnly) {
+      expect(iphone).toContain(key);
+      expect(android).not.toContain(key);
+    }
+    expect(iphone.filter((k) => !iphoneOnly.includes(k))).toEqual(android);
   });
 });

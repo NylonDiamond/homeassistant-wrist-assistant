@@ -826,11 +826,14 @@ export function homeRoomsReadMeansUnsupported(error: unknown): boolean {
 export const HOME_ROOMS_MAIN_HOUSE_TEXT = "The double-tap on the page title, the double pinch and the point control settings come from this watch's main home.";
 /** The same on a Wear OS watch, which has no double pinch. */
 export const HOME_ROOMS_MAIN_HOUSE_WEAR_TEXT = "The double-tap on the page title and the point control settings come from this watch's main home.";
-/** The same place on an iPhone, which has no main house, no double pinch
- * and no double-tap on the page title among its settings (the catalog lists
- * that row for watches only): Switch automatically is its one way. */
-export const HOME_ROOMS_PHONE_TEXT = "On the iPhone, Switch automatically is the only way these pages open.";
-/** The same on an Android phone. */
+/** The same place on an iPhone, which has no main house and no double
+ * pinch: its double-tap on the page title is in its own Settings
+ * (`topSectionDoubleTapAction`, an iPhone row since 2026-11-26). */
+export const HOME_ROOMS_PHONE_TEXT = "To jump to your room's page yourself, set Double-tap the page title to Jump to a room in Settings.";
+/** The same once that double-tap jumps to a room. */
+export const HOME_ROOMS_PHONE_JUMP_TEXT = "Double-tap the page title to jump to your room's page. Change it in Settings.";
+/** An Android phone, whose app has no double-tap on the page title:
+ * Switch automatically is its one way. */
 export const HOME_ROOMS_ANDROID_TEXT = "On the phone, Switch automatically is the only way these pages open.";
 /** Over the wait on another home while an iPhone may still move its rooms
  * here. */
