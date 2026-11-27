@@ -17,8 +17,9 @@ has_pages; nothing_to_show; the small home's switches; the first pass of
 three per area and the fill to twelve; not_an_iphone; a refused disk write
 answered 503 and a retry that answers the page once it lands; the watch (one
 library page both records hold, has_pages, asked again, not_your_watch,
-unknown_device, awaiting_move, unknown_page, invalid bodies); the dispatch
-table and the capability.
+unknown_device, awaiting_move, not_reported until the watch says what it
+runs, has_own_setup for a watch with a setup of its own, unknown_page,
+invalid bodies); the dispatch table and the capability.
 """
 
 from __future__ import annotations
@@ -177,15 +178,20 @@ class _Ctx:
 
 class _Secrets:
     """The widget secret store: two iPhones of two users, the first user's
-    watch, another user's watch and a watch bound to no one."""
+    watch, another user's watch and a watch bound to no one. Each watch said
+    it runs only the standard settings."""
 
     def __init__(self) -> None:
         self.entries = {
             IPHONE: types.SimpleNamespace(device_kind="iphone", user_id=USER),
             OTHER_IPHONE: types.SimpleNamespace(device_kind="iphone", user_id=OTHER_USER),
-            WATCH: types.SimpleNamespace(device_kind="watch", user_id=USER),
-            STRANGERS_WATCH: types.SimpleNamespace(device_kind="watch", user_id=OTHER_USER),
-            UNBOUND_WATCH: types.SimpleNamespace(device_kind="watch", user_id=None, owner_iphone_id=IPHONE),
+            WATCH: types.SimpleNamespace(device_kind="watch", user_id=USER, standard_settings=True),
+            STRANGERS_WATCH: types.SimpleNamespace(
+                device_kind="watch", user_id=OTHER_USER, standard_settings=True
+            ),
+            UNBOUND_WATCH: types.SimpleNamespace(
+                device_kind="watch", user_id=None, owner_iphone_id=IPHONE, standard_settings=True
+            ),
         }
         self.awaiting: set[str] = set()
 
@@ -720,9 +726,53 @@ def test_a_watch_not_paired_yet_is_unknown(env) -> None:
         "error": "unknown_device",
         "message": "That watch is not paired with Home Assistant yet.",
     }
-    # Paired since (its status poll fetched the box): the retry lands.
-    env.secrets.entries["watch-new"] = types.SimpleNamespace(device_kind="watch", user_id=USER)
+    # Paired since (its status poll fetched the box) and reported: the
+    # retry lands.
+    env.secrets.entries["watch-new"] = types.SimpleNamespace(
+        device_kind="watch", user_id=USER, standard_settings=True
+    )
     assert make(env, {"watch_id": "watch-new", "page_id": page_id}).body["made"] is True
+
+
+def test_a_watch_that_has_not_said_what_it_runs_is_asked_again(env) -> None:
+    # Paired again after a Forget: Home Assistant holds no report yet, and
+    # the watch may still send its own pages as its seed.
+    page_id = _made(env)
+    env.secrets.entries[WATCH].standard_settings = None
+    reply = make(env, {"watch_id": WATCH, "page_id": page_id})
+    assert reply.status == 409
+    assert reply.body == {
+        "ok": False,
+        "error": "not_reported",
+        "message": "That watch has not told Home Assistant about its own setup yet. Ask again in a moment.",
+    }
+    assert record(env, WATCH) is None
+    assert env.changes == []
+    # It reported a fresh watch: the retry lands.
+    env.secrets.entries[WATCH].standard_settings = True
+    assert make(env, {"watch_id": WATCH, "page_id": page_id}).body["made"] is True
+
+
+def test_a_watch_with_a_setup_of_its_own_keeps_it(env) -> None:
+    page_id = _made(env)
+    env.secrets.entries[WATCH].standard_settings = False
+    reply = make(env, {"watch_id": WATCH, "page_id": page_id})
+    assert reply.status == 200
+    assert reply.body == {"ok": True, "made": False, "reason": "has_own_setup"}
+    assert record(env, WATCH) is None
+    assert env.changes == []
+    # Its seed lands later: the watch's own pages, never the starter page.
+    put(env, WATCH, _own_pages())
+    assert make(env, {"watch_id": WATCH, "page_id": page_id}).body == {
+        "ok": True, "made": False, "reason": "has_pages",
+    }
+
+
+def test_an_entry_with_no_report_field_is_asked_again(env) -> None:
+    # An entry read from an older store has no field at all.
+    page_id = _made(env)
+    env.secrets.entries[WATCH] = types.SimpleNamespace(device_kind="watch", user_id=USER)
+    assert make(env, {"watch_id": WATCH, "page_id": page_id}).body["error"] == "not_reported"
 
 
 def test_a_watch_awaiting_its_iphones_move_is_refused(env) -> None:

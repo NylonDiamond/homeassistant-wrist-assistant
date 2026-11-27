@@ -6682,6 +6682,7 @@ _STARTER_PAGE_STATUS = {
     "invalid": 400,
     "unknown_device": 409,
     "awaiting_move": 409,
+    "not_reported": 409,
     "unknown_page": 409,
     "unavailable": 503,
 }
@@ -6760,9 +6761,9 @@ async def _op_starter_page_make(ctx: _OpContext) -> Response:
            "revision": <the iPhone's pages record revision>, "page": <the
            page as the iPhone's record holds it>, "states": {<entity id>:
            {"state", "attributes"}}}.
-    Reply, a watch: {"ok": true, "made": false, "reason": "has_pages"}, or
-           {"ok": true, "made": true, "revision": <the watch's pages record
-           revision>}.
+    Reply, a watch: {"ok": true, "made": false, "reason": "has_pages" |
+           "has_own_setup"}, or {"ok": true, "made": true, "revision": <the
+           watch's pages record revision>}.
     Refusal: signed {"ok": false, "error", "message"}: ``not_an_iphone`` 403
              (any signer but an iPhone entry, a watch's pair too),
              ``invalid`` 400 (``watch_id`` or ``page_id`` without the other,
@@ -6772,7 +6773,11 @@ async def _op_starter_page_make(ctx: _OpContext) -> Response:
              (a watch not bound to the signer's Home Assistant user, or an
              iPhone's id), ``unknown_page`` 409 (the iPhone holds no library
              page with that id), ``awaiting_move`` 409 (the watch waits for an
-             iPhone to move its setup here), ``unavailable`` 503 (the first
+             iPhone to move its setup here), ``not_reported`` 409 (the watch
+             has not said since it was paired whether it runs only the
+             standard settings, ``standard_settings`` in its
+             ``update_metadata``: asked again, as for ``unknown_device``, it
+             lands once the watch has said), ``unavailable`` 503 (the first
              record the disk refused, or no store); any other refusal of the
              store as for ``watch_config_put`` (``_watch_config_refusal``).
 
@@ -6787,7 +6792,13 @@ async def _op_starter_page_make(ctx: _OpContext) -> Response:
     A watch: the library page the iPhone got is picked onto the watch (one
     page both devices share), its first pages record on disk before the 200.
     A watch holding a pages record is answered ``has_pages``, or as made
-    when that record holds the page already (asked again).
+    when that record holds the page already (asked again). The page goes
+    only on a watch that said it has no setup of its own
+    (``standard_settings`` true, as `_phone_may_start_watch_settings` reads
+    it). A watch that said false is answered ``has_own_setup`` and keeps its
+    own, which it sends as its seed: a watch paired again after a Forget
+    keeps its pages on it, and a starter page made first would become its
+    record and replace them.
     """
     store = getattr(ctx.domain_data, "watch_config_store", None)
     secrets = getattr(ctx.domain_data, "widget_secret_store", None)
@@ -6874,6 +6885,15 @@ async def _starter_page_on_watch(ctx: _OpContext, store: Any, secrets: Any) -> R
             ctx,
             "awaiting_move",
             "This watch is waiting for its iPhone to move its pages here.",
+        )
+    standard = getattr(entry, "standard_settings", None)
+    if standard is False:
+        return ctx.signed_json({"ok": True, "made": False, "reason": "has_own_setup"})
+    if standard is not True:
+        return _starter_page_refusal(
+            ctx,
+            "not_reported",
+            "That watch has not told Home Assistant about its own setup yet. Ask again in a moment.",
         )
     try:
         store.library_pick(watch_id, "pages", page_id, on=True, updated_by=ctx.watch_id)
