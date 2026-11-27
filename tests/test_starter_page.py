@@ -17,9 +17,10 @@ has_pages; nothing_to_show; the small home's switches; the first pass of
 three per area and the fill to twelve; not_an_iphone; a refused disk write
 answered 503 and a retry that answers the page once it lands; the watch (one
 library page both records hold, has_pages, asked again, not_your_watch,
-unknown_device, awaiting_move, not_reported until the watch says what it
-runs, has_own_setup for a watch with a setup of its own, unknown_page,
-invalid bodies); the dispatch table and the capability.
+unknown_device, awaiting_move, a wait for a watch that has not said what it
+runs and not_reported when it never does, has_own_setup for a watch with a
+setup of its own, unknown_page, invalid bodies); the dispatch table and the
+capability.
 """
 
 from __future__ import annotations
@@ -59,7 +60,9 @@ _NAMES = (
     "_starter_page_made",
     "_op_starter_page_make",
     "_starter_page_on_watch",
+    "_starter_watch_report",
 )
+_CONSTANTS = ("_STARTER_PAGE_STATUS", "_STARTER_REPORT_WAIT_SECONDS", "_STARTER_REPORT_POLL_SECONDS")
 IPHONE = "iphone:1"
 OTHER_IPHONE = "iphone:2"
 WATCH = "watch-A"
@@ -214,7 +217,28 @@ class _Secrets:
         return entry is not None and entry.device_kind == "iphone"
 
 
-def _ops(loaded: Any, home: _Home) -> dict[str, Any]:
+class _Clock:
+    """The ``asyncio`` the op sees: a sleep that takes no time, notes how
+    long it was asked for, and runs what a test hands it at a set total
+    (the watch reporting, a seed landing, a Forget) while the op waits."""
+
+    def __init__(self) -> None:
+        self.slept: list[float] = []
+        self.at: list[tuple[float, Any]] = []
+
+    @property
+    def waited(self) -> float:
+        return sum(self.slept)
+
+    async def sleep(self, seconds: float) -> None:
+        self.slept.append(seconds)
+        for when, run in list(self.at):
+            if self.waited >= when:
+                self.at.remove((when, run))
+                run()
+
+
+def _ops(loaded: Any, home: _Home, clock: _Clock) -> dict[str, Any]:
     tree = ast.parse(_VIEWS.read_text(), filename=str(_VIEWS))
     wanted = [
         node
@@ -227,8 +251,9 @@ def _ops(loaded: Any, home: _Home) -> dict[str, Any]:
         for node in tree.body
         if isinstance(node, ast.Assign)
         and isinstance(node.targets[0], ast.Name)
-        and node.targets[0].id == "_STARTER_PAGE_STATUS"
+        and node.targets[0].id in _CONSTANTS
     ]
+    assert len(wanted) == len(_NAMES) + len(_CONSTANTS)
     code = compile(
         ast.Module(body=wanted, type_ignores=[]),
         str(_VIEWS),
@@ -240,6 +265,7 @@ def _ops(loaded: Any, home: _Home) -> dict[str, Any]:
     namespace: dict[str, Any] = {
         **platform_namespace(),
         "Any": Any,
+        "asyncio": clock,
         "Response": _Response,
         "_LOGGER": types.SimpleNamespace(info=lambda *a, **k: None, debug=lambda *a, **k: None),
         "is_iphone_entry": lambda secret: getattr(secret, "device_kind", None) == "iphone",
@@ -304,6 +330,7 @@ def env(tmp_path):
         pages.async_add_listener(lambda c: changes.append((c.owner_watch_id, c.kind, c.revision)))
         home = _Home()
         _a_home(home)
+        clock = _Clock()
         domain = types.SimpleNamespace(
             watch_config_store=pages, widget_secret_store=secrets, starter_pages={}
         )
@@ -315,7 +342,8 @@ def env(tmp_path):
             hass=types.SimpleNamespace(states=home.states),
             domain=domain,
             changes=changes,
-            ops=_ops(loaded, home),
+            clock=clock,
+            ops=_ops(loaded, home, clock),
         )
 
 
@@ -734,9 +762,24 @@ def test_a_watch_not_paired_yet_is_unknown(env) -> None:
     assert make(env, {"watch_id": "watch-new", "page_id": page_id}).body["made"] is True
 
 
-def test_a_watch_that_has_not_said_what_it_runs_is_asked_again(env) -> None:
-    # Paired again after a Forget: Home Assistant holds no report yet, and
-    # the watch may still send its own pages as its seed.
+def test_a_watch_that_says_what_it_runs_while_asked_gets_the_page_at_once(env) -> None:
+    # The main path: the iPhone asks right after it confirmed the code, the
+    # watch's pair has landed and its report comes a moment later. The ask
+    # waits for it, so an iPhone that asks again only after unknown_device
+    # (every app up to 3.2.0) still gets the page on the watch.
+    page_id = _made(env)
+    env.secrets.entries[WATCH].standard_settings = None
+    env.clock.at.append((1.0, lambda: setattr(env.secrets.entries[WATCH], "standard_settings", True)))
+    reply = make(env, {"watch_id": WATCH, "page_id": page_id})
+    assert reply.status == 200
+    assert reply.body["made"] is True
+    assert env.clock.waited == 1.0
+    assert [p["id"] for p in record(env, WATCH).document["pages"]] == [page_id]
+
+
+def test_a_watch_that_never_says_what_it_runs_is_asked_again(env) -> None:
+    # Home Assistant holds no report within the wait: not_reported, and
+    # nothing changes. A later ask lands once the watch has said.
     page_id = _made(env)
     env.secrets.entries[WATCH].standard_settings = None
     reply = make(env, {"watch_id": WATCH, "page_id": page_id})
@@ -746,11 +789,53 @@ def test_a_watch_that_has_not_said_what_it_runs_is_asked_again(env) -> None:
         "error": "not_reported",
         "message": "That watch has not told Home Assistant about its own setup yet. Ask again in a moment.",
     }
+    assert env.clock.waited == env.ops["_STARTER_REPORT_WAIT_SECONDS"] == 12.0
+    # Well inside the iPhone's 20 s timeout (StarterPageOps.timeout).
+    assert env.ops["_STARTER_REPORT_WAIT_SECONDS"] < 20
     assert record(env, WATCH) is None
     assert env.changes == []
-    # It reported a fresh watch: the retry lands.
     env.secrets.entries[WATCH].standard_settings = True
     assert make(env, {"watch_id": WATCH, "page_id": page_id}).body["made"] is True
+
+
+def test_a_watch_that_reported_is_not_waited_for(env) -> None:
+    page_id = _made(env)
+    assert make(env, {"watch_id": WATCH, "page_id": page_id}).body["made"] is True
+    assert env.clock.slept == []
+
+
+def test_a_seed_that_lands_while_asked_wins(env) -> None:
+    # The watch's own pages land as its seed during the wait: has_pages, and
+    # the starter page never replaces them.
+    page_id = _made(env)
+    env.secrets.entries[WATCH].standard_settings = None
+    env.clock.at.append((0.5, lambda: put(env, WATCH, _own_pages())))
+    reply = make(env, {"watch_id": WATCH, "page_id": page_id})
+    assert reply.body == {"ok": True, "made": False, "reason": "has_pages"}
+    assert env.clock.waited == 0.5
+    assert [p["name"] for p in record(env, WATCH).document["pages"]] == ["Mine"]
+
+
+def test_a_watch_forgotten_while_asked_is_unknown(env) -> None:
+    page_id = _made(env)
+    env.secrets.entries[WATCH].standard_settings = None
+    env.clock.at.append((0.5, lambda: env.secrets.entries.pop(WATCH)))
+    reply = make(env, {"watch_id": WATCH, "page_id": page_id})
+    assert reply.status == 409
+    assert reply.body["error"] == "unknown_device"
+    assert record(env, WATCH) is None
+
+
+def test_a_watch_paired_to_another_user_while_asked_is_refused(env) -> None:
+    page_id = _made(env)
+    env.secrets.entries[WATCH].standard_settings = None
+    env.clock.at.append((0.5, lambda: env.secrets.entries.__setitem__(
+        WATCH, types.SimpleNamespace(device_kind="watch", user_id=OTHER_USER, standard_settings=True)
+    )))
+    reply = make(env, {"watch_id": WATCH, "page_id": page_id})
+    assert reply.status == 403
+    assert reply.body["error"] == "not_your_watch"
+    assert record(env, WATCH) is None
 
 
 def test_a_watch_with_a_setup_of_its_own_keeps_it(env) -> None:
@@ -773,14 +858,18 @@ def test_an_entry_with_no_report_field_is_asked_again(env) -> None:
     page_id = _made(env)
     env.secrets.entries[WATCH] = types.SimpleNamespace(device_kind="watch", user_id=USER)
     assert make(env, {"watch_id": WATCH, "page_id": page_id}).body["error"] == "not_reported"
+    assert env.clock.waited == 12.0
 
 
 def test_a_watch_awaiting_its_iphones_move_is_refused(env) -> None:
     page_id = _made(env)
     env.secrets.awaiting.add(WATCH)
+    env.secrets.entries[WATCH].standard_settings = None
     reply = make(env, {"watch_id": WATCH, "page_id": page_id})
     assert reply.status == 409
     assert reply.body["error"] == "awaiting_move"
+    # Answered at once: no report changes a wait for the iPhone's move.
+    assert env.clock.slept == []
     assert record(env, WATCH) is None
     assert env.changes == []
 

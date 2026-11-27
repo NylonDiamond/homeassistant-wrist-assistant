@@ -6688,6 +6688,37 @@ _STARTER_PAGE_STATUS = {
 }
 
 
+# How long a watch's starter page waits for the watch to say what it runs
+# (``standard_settings``) before it is answered ``not_reported``. A watch
+# confirmed by code lands in the store on its status poll and reports on its
+# first signed requests, seconds later, so the page waits here rather than
+# answering at once: the iPhone apps up to 3.2.0 ask again only after
+# ``unknown_device``, and stop at ``not_reported``. Well inside the iPhone's
+# 20 s timeout (``StarterPageOps.timeout``).
+_STARTER_REPORT_WAIT_SECONDS = 12.0
+_STARTER_REPORT_POLL_SECONDS = 0.25
+
+
+async def _starter_watch_report(store: Any, secrets: Any, watch_id: str) -> Any:
+    """The watch's entry once it said what it runs or its own pages landed
+    as its seed, or after ``_STARTER_REPORT_WAIT_SECONDS``, whichever comes
+    first. None when the watch was forgotten meanwhile. Read again each
+    time, as a new pair replaces the entry."""
+    waited = 0.0
+    while True:
+        entry = secrets.get(watch_id)
+        if (
+            entry is None
+            or getattr(entry, "standard_settings", None) is not None
+            or not store.holds_no_record(watch_id, "pages")
+        ):
+            return entry
+        if waited >= _STARTER_REPORT_WAIT_SECONDS:
+            return entry
+        await asyncio.sleep(_STARTER_REPORT_POLL_SECONDS)
+        waited += _STARTER_REPORT_POLL_SECONDS
+
+
 def _starter_page_refusal(ctx: _OpContext, code: str, message: str) -> Response:
     return ctx.signed_json(
         {"ok": False, "error": code, "message": message},
@@ -6776,8 +6807,10 @@ async def _op_starter_page_make(ctx: _OpContext) -> Response:
              iPhone to move its setup here), ``not_reported`` 409 (the watch
              has not said since it was paired whether it runs only the
              standard settings, ``standard_settings`` in its
-             ``update_metadata``: asked again, as for ``unknown_device``, it
-             lands once the watch has said), ``unavailable`` 503 (the first
+             ``update_metadata``, within ``_STARTER_REPORT_WAIT_SECONDS`` of
+             the ask: asked again, as for ``unknown_device``, it lands once
+             the watch has said; the iPhone apps up to 3.2.0 do not ask
+             again), ``unavailable`` 503 (the first
              record the disk refused, or no store); any other refusal of the
              store as for ``watch_config_put`` (``_watch_config_refusal``).
 
@@ -6796,9 +6829,19 @@ async def _op_starter_page_make(ctx: _OpContext) -> Response:
     only on a watch that said it has no setup of its own
     (``standard_settings`` true, as `_phone_may_start_watch_settings` reads
     it). A watch that said false is answered ``has_own_setup`` and keeps its
-    own, which it sends as its seed: a watch paired again after a Forget
-    keeps its pages on it, and a starter page made first would become its
-    record and replace them.
+    own, which it sends as its seed: a starter page made first would become
+    its record and replace them. A watch that has not said yet is waited for
+    (``_starter_watch_report``), since a fresh watch says so seconds after
+    its pair lands and the iPhone asks right after it confirmed the code.
+
+    A known gap: ``standard_settings`` speaks of the watch's settings, not
+    its pages. A watch Forgotten and paired again goes back to the standard
+    settings while it keeps pages that were its own seed, so it says true
+    and can still get the starter page before its pages seed lands (it then
+    pulls the starter page, and its old pages stay in the library). And a
+    fresh watch whose settings someone changed says false and gets no page.
+    Only a report of its own pages from the watch can close this; Home
+    Assistant holds nothing that says it.
     """
     store = getattr(ctx.domain_data, "watch_config_store", None)
     secrets = getattr(ctx.domain_data, "widget_secret_store", None)
@@ -6872,6 +6915,18 @@ async def _starter_page_on_watch(ctx: _OpContext, store: Any, secrets: Any) -> R
         return _starter_page_refusal(
             ctx, "unknown_page", f"This {_phone_noun(ctx)} holds no page {page_id}."
         )
+    if store.holds_no_record(watch_id, "pages") and not secrets.may_await_move(watch_id):
+        # A fresh watch says what it runs seconds after its pair lands.
+        entry = await _starter_watch_report(store, secrets, watch_id)
+        if entry is None:
+            return _starter_page_refusal(
+                ctx, "unknown_device", "That watch is not paired with Home Assistant yet."
+            )
+        if is_iphone_entry(entry) or getattr(entry, "user_id", None) != ctx.user_id:
+            return _starter_page_refusal(
+                ctx, "not_your_watch", f"That watch is not one of this {_phone_noun(ctx)}'s watches."
+            )
+    # Read again after the wait: the watch's own seed may have landed.
     if not store.holds_no_record(watch_id, "pages"):
         if _held_page(store, watch_id, page_id) is None:
             return ctx.signed_json({"ok": True, "made": False, "reason": "has_pages"})
