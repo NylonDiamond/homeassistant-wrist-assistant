@@ -323,16 +323,15 @@ describe("homeDoorLook", () => {
   it("gives an iPhone's Settings iPhone words, from the sections its Settings screen shows", () => {
     const settings = deviceSheetTabs("iphone", true).find((t) => t.kind === "screen" && t.screen.id === "settings")!;
     expect(homeDoorLook(settings, "iphone").blurb).toBe(IPHONE_SETTINGS_BLURB);
-    expect(IPHONE_SETTINGS_BLURB).not.toMatch(/wrist|connect/i);
+    expect(IPHONE_SETTINGS_BLURB).not.toMatch(/wrist/i);
     expect(homeDoorLook(settings, "watch").blurb).toBe("Gestures, wrist twists and how it connects.");
     expect(homeDoorLook(settings, "iphone").hue).toBe(homeDoorLook(settings, "watch").hue);
     // Every section the blurb names holds a setting the iPhone shows.
     const sections = (catalog as { sections: { title: string; settings: { devices?: string[] }[] }[] }).sections
       .filter((s) => s.settings.some((row) => row.devices?.includes("iphone")))
       .map((s) => s.title.toLowerCase());
-    expect(sections).toEqual(expect.arrayContaining(["gestures", "pages", "cameras"]));
+    expect(sections).toEqual(expect.arrayContaining(["connection", "gestures", "pages", "cameras"]));
     expect(sections).not.toContain("wrist twists");
-    expect(sections).not.toContain("connection");
   });
 
   it("gives a watch's Control Center the iPhone's look, and leaves Settings alone in grey", () => {

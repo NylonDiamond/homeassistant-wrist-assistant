@@ -3256,7 +3256,6 @@ def _full_behavior() -> dict:
         crownSwitchesPages=False,
         doubleTapSpeed="Fast",
         hapticIntensity="Medium",
-        serverMode="Local",
         deltaTimeout="45s",
         handGestureAction="Next Page",
         sliderCrownSensitivity="Fast",
@@ -3278,7 +3277,6 @@ _DROPPED = sorted(
         "motionGestureActionsJSON",
         "pointControlRoomMappingsJSON",
         "roomQuickJumpEnabled",
-        "serverMode",
         "settingFromANewerApp",
         "showGestureDebug",
         "sliderCrownSensitivity",
@@ -3421,7 +3419,7 @@ def test_a_move_onto_a_phone_of_watch_only_kinds_is_refused_whole(mod):
 def test_a_move_onto_a_phone_of_a_watch_s_settings_is_refused_whole(mod):
     store = _phone_store(mod)
     _put(store, OWNER, _full_behavior(), kind="behavior")
-    with pytest.raises(mod.WatchConfigPhoneKindError, match="serverMode"):
+    with pytest.raises(mod.WatchConfigPhoneKindError, match="deltaTimeout"):
         store.move_owner(OWNER, PHONE, updated_by="ha-panel")
     assert store.get(PHONE, "behavior") is None
     assert store.get(OWNER, "behavior").document == _full_behavior()
@@ -3443,7 +3441,7 @@ def test_check_move_owner_refuses_what_move_owner_would_and_changes_nothing(mod)
     with pytest.raises(mod.WatchConfigPhoneKindError):
         store.check_move_owner(OWNER, PHONE)
     _put(store, OTHER, _full_behavior(), kind="behavior")
-    with pytest.raises(mod.WatchConfigPhoneKindError, match="serverMode"):
+    with pytest.raises(mod.WatchConfigPhoneKindError, match="deltaTimeout"):
         store.check_move_owner(OTHER, PHONE)
     assert sorted(store.owners()) == sorted([OWNER, OTHER])
     assert store.get(PHONE, "behavior") is None

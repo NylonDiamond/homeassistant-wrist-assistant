@@ -349,14 +349,16 @@ describe("Watch settings as a page under the Watch app row", () => {
       expect(shown).toContain(`role="toolbar" aria-label=iPhone settings>`);
       expect(shown).toContain("Jesse's iPhone · Saved ");
       expect(bar()).toContain("iPhone settings");
-      for (const key of ["longPressDuration", "pageTransitionStyle", "wrapPages", "cameraStreamMode"]) expect(shown, key).toContain(`data-key=${key}`);
-      for (const key of ["serverMode", "deltaTimeout", "handGestureAction", "sliderCrownSensitivity", "bottomEdgePageSwipeSensitivity", "motionGestureActionsJSON"]) {
+      for (const key of ["serverMode", "longPressDuration", "pageTransitionStyle", "wrapPages", "cameraStreamMode"]) {
+        expect(shown, key).toContain(`data-key=${key}`);
+      }
+      for (const key of ["deltaTimeout", "handGestureAction", "sliderCrownSensitivity", "bottomEdgePageSwipeSensitivity", "motionGestureActionsJSON"]) {
         expect(shown, key).not.toContain(`data-key=${key}`);
       }
-      // Connection holds nothing for the iPhone, so the page opens on Gestures,
-      // without the Motion card, which holds nothing for it either.
+      // Connection holds Where to connect for the iPhone; the Motion card
+      // holds nothing for it.
+      expect(shown).toContain("data-sec=ws-connection");
       expect(shown).toContain("data-sec=ws-gestures");
-      expect(shown).not.toContain("data-sec=ws-connection");
       expect(shown).not.toContain("data-sec=ws-motion");
       // The iPhone's own page says what it knows of the iPhone, not how to
       // pair another device.

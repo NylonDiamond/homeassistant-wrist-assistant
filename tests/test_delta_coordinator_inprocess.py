@@ -2456,7 +2456,7 @@ def test_a_panel_save_for_a_phone_wakes_the_phone_and_never_its_watch(coordinato
         behavior = store.panel_save(
             "phone-1",
             "behavior",
-            {"schemaVersion": 1, "wrapPages": True, "serverMode": "Local"},
+            {"schemaVersion": 1, "wrapPages": True, "deltaTimeout": "25s"},
             base_revision=0,
         )
         status, body = await asyncio.wait_for(phone_poll, timeout=2)

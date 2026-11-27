@@ -241,11 +241,19 @@ describe("the settings an Android device reads", () => {
     expect(appleCrown.label).toBe("Digital Crown speed");
   });
 
-  it("on an Android phone: every iPhone row but the Page look and the title double-tap", () => {
+  it("on an Android phone: every iPhone row but the Page look, the title double-tap, Where to connect and the point control label", () => {
     const android = keys(catalogFor("iphone", undefined, "android"));
     const iphone = keys(catalogFor("iphone"));
-    // The iPhone's title double-tap (2026-11-26) is not in the Android app yet.
-    const iphoneOnly = ["phonePageLook", "topSectionDoubleTapAction", "topSectionDoubleTapSceneTargetId", "topSectionDoubleTapScriptTargetId"];
+    // The iPhone's title double-tap (2026-11-26), Where to connect and the
+    // point control label (2026-11-27) are not in the Android app yet.
+    const iphoneOnly = [
+      "serverMode",
+      "phonePageLook",
+      "topSectionDoubleTapAction",
+      "topSectionDoubleTapSceneTargetId",
+      "topSectionDoubleTapScriptTargetId",
+      "pointControlShowHUD",
+    ];
     for (const key of iphoneOnly) {
       expect(iphone).toContain(key);
       expect(android).not.toContain(key);

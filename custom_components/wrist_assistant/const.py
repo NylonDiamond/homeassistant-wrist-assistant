@@ -274,6 +274,8 @@ WATCH_CONFIG_SEED_KINDS = frozenset(
 # tests/test_phone_behavior_keys.py keeps it equal to the catalog.
 PHONE_BEHAVIOR_KEYS = frozenset(
     {
+        # Connection
+        "serverMode",
         # Interaction
         "longPressDuration",
         "entityRadialVerticalQuickRadialGestureEnabled",
@@ -284,6 +286,7 @@ PHONE_BEHAVIOR_KEYS = frozenset(
         "automationTriggerSkipConditions",
         "showPendingAnimation",
         "pendingAnimationDisabledDomains",
+        "pointControlShowHUD",
         # Navigation
         "phonePageLook",
         "pageTransitionStyle",

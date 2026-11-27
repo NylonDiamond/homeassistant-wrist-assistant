@@ -188,16 +188,23 @@ describe("the catalog", () => {
 
   // The integration keeps only the `iphone` keys on a phone's settings, and
   // its own copy of that list is held to this file by a Python test.
-  it("says for every row which devices read it: the watch for all but the Page look, the iPhone for 35", () => {
+  it("says for every row which devices read it: the watch for all but the Page look, the iPhone for 37", () => {
     for (const s of settings) {
       expect(s.devices, s.key).toBeDefined();
       // The Android apps read the same rows: a Wear OS watch every watch row
       // but the double pinch, an Android phone every iPhone row but the Page look.
-      // The title double-tap reached the iPhone (2026-11-26) before the Android phone app.
+      // The title double-tap reached the iPhone (2026-11-26) before the Android phone app,
+      // and so did Where to connect and the point control label (2026-11-27).
       expect([["watch"], ["watch", "wearos"], ["watch", "iphone", "wearos", "android"], ["watch", "iphone", "wearos"], ["iphone"]], s.key).toContainEqual([...s.devices!]);
     }
-    expect(settings.filter((s) => s.devices!.includes("iphone")).length).toBe(35);
-    expect(settings.filter((s) => s.devices!.join() === "watch,iphone,wearos").map((s) => s.key)).toEqual(["topSectionDoubleTapAction", "topSectionDoubleTapSceneTargetId", "topSectionDoubleTapScriptTargetId"]);
+    expect(settings.filter((s) => s.devices!.includes("iphone")).length).toBe(37);
+    expect(settings.filter((s) => s.devices!.join() === "watch,iphone,wearos").map((s) => s.key)).toEqual([
+      "serverMode",
+      "topSectionDoubleTapAction",
+      "topSectionDoubleTapSceneTargetId",
+      "topSectionDoubleTapScriptTargetId",
+      "pointControlShowHUD",
+    ]);
     expect(settings.filter((s) => !s.devices!.includes("watch")).map((s) => s.key)).toEqual(["phonePageLook"]);
     expect(
       settings
@@ -213,8 +220,6 @@ describe("the catalog", () => {
       "motionGestureActionsJSON",
       "motionGestureSensitivity",
       "motionGestureSensitivityLevel",
-      "pointControlShowHUD",
-      "serverMode",
       "sliderCrownSensitivity",
     ]);
   });

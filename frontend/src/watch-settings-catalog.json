@@ -7,7 +7,7 @@
       "settings": [
         {
           "key": "serverMode",
-          "devices": ["watch", "wearos"],
+          "devices": ["watch", "iphone", "wearos"],
           "type": "enum",
           "label": "Where to connect",
           "help": "Auto uses your home Wi-Fi when you are home and the internet when you are out. Leave it on Auto unless something is wrong.",
@@ -84,11 +84,11 @@
           "type": "enum",
           "label": "Double-tap the page title",
           "help": "Tap the name at the top of a page twice. Switch home needs two or more homes on this watch.",
-          "phoneHelp": "Tap the top of the screen twice: the page's name, or the strip under the clock when the name is hidden.",
+          "phoneHelp": "Tap the top of the screen twice: the page's name, or the strip under the clock when the name is hidden. Switch home needs two or more homes on this iPhone.",
           "default": "Disabled",
           "options": [
             {"value": "Disabled", "label": "Nothing"},
-            {"value": "Toggle Aimed Entity (Point Control)", "label": "Toggle what you point at", "devices": ["watch", "wearos"]},
+            {"value": "Toggle Aimed Entity (Point Control)", "label": "Toggle what you point at"},
             {"value": "Room Jump", "label": "Jump to a room"},
             {"value": "Activate Scene", "label": "Turn on a scene"},
             {"value": "Run Script", "label": "Run a script"},
@@ -96,7 +96,7 @@
             {"value": "Next Page", "label": "Next page"},
             {"value": "Previous Page", "label": "Previous page"},
             {"value": "Toggle First Tile", "label": "Toggle the first tile"},
-            {"value": "Switch Instance", "label": "Switch home", "devices": ["watch", "wearos"]}
+            {"value": "Switch Instance", "label": "Switch home"}
           ]
         },
         {
@@ -502,7 +502,7 @@
         },
         {
           "key": "pointControlShowHUD",
-          "devices": ["watch", "wearos"],
+          "devices": ["watch", "iphone", "wearos"],
           "type": "bool",
           "label": "Point control label",
           "help": "While point control runs, show the name of the device you point at. You set up what to point at in Rooms.",

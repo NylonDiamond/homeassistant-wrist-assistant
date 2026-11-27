@@ -530,7 +530,7 @@ const SCREEN_DOORS: Partial<Record<WatchScreen["id"] | "settings", HomeDoorLook>
 /** An iPhone's Settings door: the sections its Settings screen shows
  * (`watch-settings-catalog.json`, the rows for an iPhone), which have no
  * wrist twists and no connection. */
-export const IPHONE_SETTINGS_BLURB = "Gestures, page look and cameras.";
+export const IPHONE_SETTINGS_BLURB = "How it connects, gestures, page look and cameras.";
 
 /** The look of one of the device's doors (`deviceSheetTabs`). */
 export function homeDoorLook(tab: DeviceSheetTab, kind: "watch" | "iphone"): HomeDoorLook {

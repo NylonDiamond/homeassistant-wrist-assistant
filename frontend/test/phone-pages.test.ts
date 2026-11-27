@@ -93,9 +93,9 @@ describe("the Watch app's devices", () => {
 describe("iPhone settings", () => {
   it("are the settings the catalog marks for the iPhone, in the catalog's cards, with no card left empty", () => {
     const sections = catalogFor("iphone");
-    expect(sections.map((s) => s.id)).toEqual(["gestures", "navigation", "controls", "camera"]);
+    expect(sections.map((s) => s.id)).toEqual(["connection", "gestures", "navigation", "controls", "camera"]);
     const settings = sections.flatMap((s) => s.settings);
-    expect(settings).toHaveLength(35);
+    expect(settings).toHaveLength(37);
     expect(settings.every((s) => s.devices?.includes("iphone"))).toBe(true);
     // The Page look leads the iPhone's Pages card.
     expect(sections.find((s) => s.id === "navigation")!.settings[0]!.key).toBe("phonePageLook");
@@ -108,14 +108,28 @@ describe("iPhone settings", () => {
     expect(catalogFor("watch")).toEqual(withoutLook);
   });
 
-  it("give the iPhone the title double-tap without the watch's choices, and leave out the Point Control label", () => {
+  it("give the iPhone the title double-tap with every choice, Where to connect and the point control label", () => {
     const settings = catalogFor("iphone").flatMap((s) => s.settings);
     const keys = settings.map((s) => s.key);
-    for (const key of ["topSectionDoubleTapAction", "topSectionDoubleTapSceneTargetId", "topSectionDoubleTapScriptTargetId"]) expect(keys).toContain(key);
-    expect(keys).not.toContain("pointControlShowHUD");
+    for (const key of ["topSectionDoubleTapAction", "topSectionDoubleTapSceneTargetId", "topSectionDoubleTapScriptTargetId", "serverMode", "pointControlShowHUD"]) {
+      expect(keys).toContain(key);
+    }
     const tap = settings.find((s) => s.key === "topSectionDoubleTapAction")!;
-    expect(tap.options!.map((o) => o.value)).toEqual(["Disabled", "Room Jump", "Activate Scene", "Run Script", "Refresh", "Next Page", "Previous Page", "Toggle First Tile"]);
-    expect(tap.help).toBe("Tap the top of the screen twice: the page's name, or the strip under the clock when the name is hidden.");
+    expect(tap.options!.map((o) => o.value)).toEqual([
+      "Disabled",
+      "Toggle Aimed Entity (Point Control)",
+      "Room Jump",
+      "Activate Scene",
+      "Run Script",
+      "Refresh",
+      "Next Page",
+      "Previous Page",
+      "Toggle First Tile",
+      "Switch Instance",
+    ]);
+    expect(tap.help).toBe(
+      "Tap the top of the screen twice: the page's name, or the strip under the clock when the name is hidden. Switch home needs two or more homes on this iPhone.",
+    );
   });
 
   it("show the dots' look and the popup background only with the Watch look", () => {

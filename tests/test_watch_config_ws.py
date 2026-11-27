@@ -1367,7 +1367,7 @@ def test_the_panel_starts_a_phone_s_pages_and_settings(env) -> None:
         "link_failures": [],
         "template_budget": {"used": 0, "limit": 100, "scope": "device"},
     }
-    sent = {"schemaVersion": 1, "wrapPages": True, "serverMode": "Local", "roomQuickJumpEnabled": True}
+    sent = {"schemaVersion": 1, "wrapPages": True, "deltaTimeout": "25s", "roomQuickJumpEnabled": True}
     assert _save(env, sent, 0, kind="behavior", owner=PHONE).results[1] == {"revision": 1, "link_failures": []}
     # The watch only setting and the room key are gone, silently, and the
     # record the panel reads back says so.
