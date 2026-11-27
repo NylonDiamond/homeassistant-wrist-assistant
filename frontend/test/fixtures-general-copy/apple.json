@@ -169,5 +169,8 @@
   "qrUserTitle": "Whose iPhone is this?",
   "qrUserHint": "The iPhone runs with this person's rights.",
   "searchWords": "This watch, this iPhone, paired, pairing, pair again, app version, build, last seen, reached, owner, person",
-  "voiceNotForIphone": "An iPhone keeps no phrases."
+  "voiceNotForIphone": "An iPhone keeps no phrases.",
+  "pairStepTodo": "Sign in on the iPhone app, or type the code the watch shows.",
+  "updateFirst": "Update HouseLit on the iPhone first.",
+  "welcomeEasy": "Open HouseLit on your iPhone and sign in. The iPhone pairs, and your Apple Watch sets itself up from it. Nothing to type here."
 }

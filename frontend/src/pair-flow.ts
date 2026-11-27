@@ -61,6 +61,20 @@ export const PAIR_CHOICES: readonly { choice: PairChoice; label: string; line: s
   },
 ];
 
+/** The welcome's easy way, over Pick one: one sign in on the iPhone pairs
+ * it, and an Apple Watch then sets itself up from that iPhone over their
+ * setup link, with nothing to pick or type in the panel. The pairing card
+ * below stays for a watch on its own, or a phone with no way to sign in. */
+export const WELCOME_EASY_TITLE = "The easy way";
+export function welcomeEasyText(): string {
+  return generalCopy(
+    "Open HouseLit on your iPhone and sign in. The iPhone pairs, and your Apple Watch sets itself up from it. Nothing to type here.",
+    "Open HouseLit on your phone and sign in. The phone pairs, and an Apple Watch sets itself up from its iPhone. Nothing to type here.",
+  );
+}
+/** Step 2's line under the easy way: the panel's own ways, for one device. */
+export const WELCOME_PICK_LINE = "Or pair one here. Which device is it? You can pair the other one later.";
+
 /** The line under the choice: whose a paired device is. Only an
  * administrator gets "Whose watch is this?" (`mayPairForOthers`). */
 export function pairChoiceNote(isAdmin: boolean): string {
@@ -91,8 +105,12 @@ export function pairCodeTitle(device: PairChoice | undefined): string {
 }
 
 /** The steps on the device before its code shows. A watch asks for this
- * Home Assistant's address after Pair with Home Assistant; an iPhone shows a
- * code from Show a code instead. Without an answer, the steps cover both. */
+ * Home Assistant's address after Pair with Home Assistant. A new iPhone opens
+ * on Connect your home, where Show a code is under Other ways to connect; an
+ * iPhone already set up reaches it from Settings, Homes, Add Another Home,
+ * whose Pair with Home Assistant screen offers Show a code instead (the app's
+ * `ConnectHomeView`, `OtherWaysSheet` and `PhonePairingViews`). Without an
+ * answer, the steps cover both. */
 export function pairCodeSteps(device: PairChoice | undefined): readonly string[] {
   if (device === "watch") {
     return [
@@ -104,9 +122,9 @@ export function pairCodeSteps(device: PairChoice | undefined): readonly string[]
   if (device === "iphone") {
     const phone = generalCopy("iPhone", "phone");
     return [
-      `On the ${phone}, open HouseLit and choose Pair with Home Assistant.`,
-      "Choose Show a code instead, and pick this Home Assistant.",
-      `The ${phone} shows a 6-character code. Type it here.`,
+      `On the ${phone}, open HouseLit. On Connect your home, tap Other ways to connect, then Show a code.`,
+      "Already set up? In Settings, tap Homes, then Add Another Home, then Show a code instead.",
+      `Pick this Home Assistant if it asks. The ${phone} shows a 6-character code. Type it here.`,
     ];
   }
   return pairCodeStepsForAny();

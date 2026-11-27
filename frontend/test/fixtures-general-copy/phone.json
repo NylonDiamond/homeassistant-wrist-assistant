@@ -59,9 +59,9 @@
   ],
   "pairCodeTitle": "Type the phone's code",
   "pairCodeStepsIphone": [
-    "On the phone, open HouseLit and choose Pair with Home Assistant.",
-    "Choose Show a code instead, and pick this Home Assistant.",
-    "The phone shows a 6-character code. Type it here."
+    "On the phone, open HouseLit. On Connect your home, tap Other ways to connect, then Show a code.",
+    "Already set up? In Settings, tap Homes, then Add Another Home, then Show a code instead.",
+    "Pick this Home Assistant if it asks. The phone shows a 6-character code. Type it here."
   ],
   "pairCodeStepsAny": [
     "Open HouseLit on the watch or phone.",
@@ -169,5 +169,8 @@
   "qrUserTitle": "Whose phone is this?",
   "qrUserHint": "The phone runs with this person's rights.",
   "searchWords": "This watch, this iPhone, this phone, paired, pairing, pair again, app version, build, last seen, reached, owner, person",
-  "voiceNotForIphone": "A phone keeps no phrases."
+  "voiceNotForIphone": "A phone keeps no phrases.",
+  "pairStepTodo": "Sign in on the phone app, or type the code the watch shows.",
+  "updateFirst": "Update HouseLit on the phone first.",
+  "welcomeEasy": "Open HouseLit on your phone and sign in. The phone pairs, and an Apple Watch sets itself up from its iPhone. Nothing to type here."
 }

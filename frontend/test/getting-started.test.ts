@@ -11,8 +11,9 @@ import {
   TROUBLESHOOTING_URL,
   doneWords,
   gettingStarted,
+  devicesWithPages,
   helpStepWords,
-  watchesWithPages,
+  updateFirstText,
 } from "../src/getting-started.js";
 import { setAndroidHere } from "../src/device-platform.js";
 import type { OwnerSummary, WatchConfigSummary } from "../src/ha-api.js";
@@ -42,7 +43,9 @@ const owner = (over: Partial<OwnerSummary> = {}): OwnerSummary => ({
   ...over,
 } as OwnerSummary);
 
-const phone = owner({ owner_watch_id: "p1", device_name: "iPhone", device_kind: "iphone" });
+const phone = owner({ owner_watch_id: "p1", device_name: "iPhone", device_kind: "iphone", phone_pages: true });
+/** An iPhone whose app is too old to keep pages of its own. */
+const oldPhone = owner({ owner_watch_id: "p0", device_name: "Old iPhone", device_kind: "iphone" });
 const library = owner({ owner_watch_id: "library", device_name: null, device_kind: "library" });
 const orphan = owner({ owner_watch_id: "old", is_orphan: true, device_kind: null });
 
@@ -61,7 +64,7 @@ describe("gettingStarted", () => {
     expect(gs.steps.map((s) => [s.id, s.done])).toEqual([["app", false], ["pair", false], ["page", false]]);
     expect(gs.done).toBe(0);
     expect(gs.next).toBe("app");
-    expect(gs.watch).toBeUndefined();
+    expect(gs.device).toBeUndefined();
     expect(gs.known).toBe(true);
   });
 
@@ -71,19 +74,41 @@ describe("gettingStarted", () => {
     expect(gs.next).toBe("app");
   });
 
-  it("takes an iPhone alone as having the app, but not a paired watch", () => {
-    const gs = gettingStarted([phone], undefined);
-    expect(gs.steps.map((s) => s.done)).toEqual([true, false, false]);
-    expect(gs.next).toBe("pair");
-    expect(gs.watch).toBeUndefined();
+  it("takes an iPhone alone as paired: HouseLit is for the whole home, no watch needed", () => {
+    const gs = gettingStarted([phone], new Set(), undefined, true);
+    expect(gs.steps.map((s) => s.done)).toEqual([true, true, false]);
+    expect(gs.next).toBe("page");
+    expect(gs.device).toBe("p1");
+    expect(gs.deviceNames).toEqual(["iPhone"]);
+  });
+
+  it("is all done for an iPhone alone once its own pages record holds a page, as the starter page makes", () => {
+    const gs = gettingStarted([phone], new Set(["p1"]), undefined, true);
+    expect(gs.done).toBe(3);
+    expect(gs.next).toBeUndefined();
+  });
+
+  it("counts an iPhone's pages only on a home that keeps phone pages", () => {
+    const gs = gettingStarted([phone], new Set(["p1"]));
+    expect(gs.steps.map((s) => s.done)).toEqual([true, true, false]);
+    expect(gs.device).toBeUndefined();
+    expect(gs.known).toBe(true);
+  });
+
+  it("says to update an iPhone too old for pages of its own, in place of New page", () => {
+    const gs = gettingStarted([oldPhone], new Set(), undefined, true);
+    expect(gs.steps.map((s) => s.done)).toEqual([true, true, false]);
+    expect(gs.next).toBe("page");
+    expect(gs.device).toBeUndefined();
+    expect(gs.deviceNames).toEqual(["Old iPhone"]);
   });
 
   it("is two of three with a watch and no page, New page on that watch", () => {
     const gs = gettingStarted([owner()], new Set());
     expect(gs.done).toBe(2);
     expect(gs.next).toBe("page");
-    expect(gs.watch).toBe("w1");
-    expect(gs.watchNames).toEqual(["Jesse Apple Watch"]);
+    expect(gs.device).toBe("w1");
+    expect(gs.deviceNames).toEqual(["Jesse Apple Watch"]);
     expect(gs.known).toBe(true);
   });
 
@@ -93,16 +118,29 @@ describe("gettingStarted", () => {
     expect(gs.next).toBeUndefined();
   });
 
-  it("does not know the page step until the pages are read, when there is a watch", () => {
-    expect(gettingStarted([owner()], undefined).known).toBe(false);
-    expect(gettingStarted([phone], undefined).known).toBe(true);
+  it("is all done once the iPhone has a page, beside a watch with none", () => {
+    expect(gettingStarted([owner(), phone], new Set(["p1"]), undefined, true).done).toBe(3);
   });
 
-  it("opens New page on the shared watch when it is a watch of the home, else the first", () => {
+  it("does not know the page step until the pages are read, when there is a device to hold one", () => {
+    expect(gettingStarted([owner()], undefined).known).toBe(false);
+    expect(gettingStarted([phone], undefined, undefined, true).known).toBe(false);
+    expect(gettingStarted([phone], undefined).known).toBe(true);
+    expect(gettingStarted([oldPhone], undefined, undefined, true).known).toBe(true);
+  });
+
+  it("opens New page on the shared watch when it is a watch of the home, else the first watch, else the iPhone", () => {
     const watches = [owner(), owner({ owner_watch_id: "w2" })];
-    expect(gettingStarted(watches, new Set(), "w2").watch).toBe("w2");
-    expect(gettingStarted(watches, new Set(), "gone").watch).toBe("w1");
-    expect(gettingStarted([...watches, phone], new Set(), "p1").watch).toBe("w1");
+    expect(gettingStarted(watches, new Set(), "w2").device).toBe("w2");
+    expect(gettingStarted(watches, new Set(), "gone").device).toBe("w1");
+    expect(gettingStarted([...watches, phone], new Set(), "p1", true).device).toBe("w1");
+    expect(gettingStarted([oldPhone, phone], new Set(), undefined, true).device).toBe("p1");
+  });
+
+  it("names the watches first, then the phones", () => {
+    const gs = gettingStarted([phone, owner()], new Set(), undefined, true);
+    expect(gs.deviceNames).toEqual(["Jesse Apple Watch", "iPhone"]);
+    expect(gettingStarted([owner({ owner_watch_id: "p2", device_kind: "iphone", device_name: null })], new Set()).deviceNames).toEqual(["iPhone"]);
   });
 });
 
@@ -125,25 +163,26 @@ describe("gettingStarted for a long time user", () => {
   });
 });
 
-describe("watchesWithPages", () => {
+describe("devicesWithPages", () => {
   const delivery = (items?: number) => ({ revision: 1, delivered_revision: 1, rejected_revision: 0, ...(items === undefined ? {} : { items }) });
   const summary = (owners: WatchConfigSummary["owners"]): WatchConfigSummary => ({ owners });
 
-  it("lists a watch whose pages record holds a page", () => {
-    expect([...watchesWithPages(summary({ w1: { pages: delivery(2) } }), ["w1"])]).toEqual(["w1"]);
+  it("lists a watch or an iPhone whose pages record holds a page", () => {
+    expect([...devicesWithPages(summary({ p1: { pages: delivery(1) } }), ["w1", "p1"])]).toEqual(["p1"]);
+    expect([...devicesWithPages(summary({ w1: { pages: delivery(2) } }), ["w1"])]).toEqual(["w1"]);
   });
 
   it("leaves out a watch with no pages record, or one that lists no page", () => {
     const s = summary({ w1: { menus: delivery() }, w2: { pages: delivery(0) } });
-    expect([...watchesWithPages(s, ["w1", "w2", "w3"])]).toEqual([]);
+    expect([...devicesWithPages(s, ["w1", "w2", "w3"])]).toEqual([]);
   });
 
   it("takes the record itself as the page when the integration sends no counts", () => {
-    expect([...watchesWithPages(summary({ w1: { pages: delivery() } }), ["w1"])]).toEqual(["w1"]);
+    expect([...devicesWithPages(summary({ w1: { pages: delivery() } }), ["w1"])]).toEqual(["w1"]);
   });
 
   it("only asks about the watches it is given", () => {
-    expect([...watchesWithPages(summary({ w9: { pages: delivery(1) } }), ["w1"])]).toEqual([]);
+    expect([...devicesWithPages(summary({ w9: { pages: delivery(1) } }), ["w1"])]).toEqual([]);
   });
 });
 
@@ -152,11 +191,17 @@ describe("the words", () => {
     expect(doneWords(2)).toBe("2 of 3 done");
   });
 
-  it("name the paired watch in Help, or how many", () => {
+  it("name the paired device in Help, or how many", () => {
+    expect(helpStepWords("pair", gettingStarted([owner()], new Set())).title).toBe("Pair a device");
     expect(helpStepWords("pair", gettingStarted([owner()], new Set())).text).toBe("Jesse Apple Watch is paired.");
+    expect(helpStepWords("pair", gettingStarted([phone], new Set(), undefined, true)).text).toBe("iPhone is paired.");
     const two = gettingStarted([owner(), owner({ owner_watch_id: "w2", device_name: "Other" })], new Set());
-    expect(helpStepWords("pair", two).text).toBe("2 watches are paired.");
-    expect(helpStepWords("pair", gettingStarted([], undefined)).text).toBe("Type the code the watch shows.");
+    expect(helpStepWords("pair", two).text).toBe("2 devices are paired.");
+    expect(helpStepWords("pair", gettingStarted([owner(), phone], new Set(), undefined, true)).text).toBe("2 devices are paired.");
+    // Nothing paired yet: the one sign in on the phone first, then the watch's code.
+    expect(helpStepWords("pair", gettingStarted([], undefined)).text).toBe("Sign in on the phone app, or type the code the watch shows.");
+    expect(helpStepWords("page", gettingStarted([], undefined))).toEqual({ title: "Make your first page", text: "Tiles for lights, scenes and cameras." });
+    expect(updateFirstText()).toBe("Update HouseLit on the phone first.");
     // Google Play is named only once an Android device is paired here.
     expect(helpStepWords("app", gettingStarted([phone], undefined)).text).toBe("HouseLit is on the App Store.");
     setAndroidHere(true);
@@ -321,6 +366,43 @@ describe("the Help sheet", () => {
     expect(text).not.toContain(">Open the App Store</a>");
   });
 
+  it("takes an iPhone alone as a full setup: New page on the iPhone, then all three done", () => {
+    let opened: string | undefined;
+    const draw = (gs: ReturnType<typeof gettingStarted>) => renderHelpSheet({
+      gs, route: at(""), version: "3.2.0",
+      onClosed: () => undefined, onPair: () => undefined, onNewPage: (device) => { opened = device; },
+    });
+    const fresh = flat(draw(gettingStarted([phone], new Set(), undefined, true)));
+    expect(fresh).toContain("2 of 3 done");
+    expect(fresh).toContain("iPhone is paired.");
+    expect(fresh).toContain(">New page</button>");
+    expect(fresh).not.toContain("watch first");
+    // The New page button opens Pages on the iPhone.
+    const button = draw(gettingStarted([phone], new Set(), undefined, true));
+    const find = (v: unknown): (() => void) | undefined => {
+      if (Array.isArray(v)) { for (const x of v) { const f = find(x); if (f) return f; } return undefined; }
+      if (v !== null && typeof v === "object" && "strings" in v && "values" in v) {
+        const r = v as { strings: readonly string[]; values: unknown[] };
+        for (let i = 0; i < r.values.length; i++) {
+          if (typeof r.values[i] === "function" && r.values[i + 1] === "New page") return r.values[i] as () => void;
+          const f = find(r.values[i]);
+          if (f) return f;
+        }
+      }
+      return undefined;
+    };
+    find(button)?.();
+    expect(opened).toBe("p1");
+    // With its starter page, the sheet folds to the screen in view.
+    const done = flat(draw(gettingStarted([phone], new Set(["p1"]), undefined, true)));
+    expect(done).toContain("3 of 3 done");
+    expect(done).not.toContain("hs-steps");
+    // An iPhone too old for pages of its own is told to update, not to pair a watch.
+    const old = flat(draw(gettingStarted([oldPhone], new Set(), undefined, true)));
+    expect(old).toContain(updateFirstText());
+    expect(old).not.toContain(">New page</button>");
+  });
+
   it("lists the three guides and the version", () => {
     const text = sheet("/menus");
     expect(text).toContain("On this screen: Menus");
@@ -361,8 +443,13 @@ describe("the panel's wiring", () => {
     expect(render).toContain("${this.helpSheetOpen ? this.renderHelpSheet() : nothing}");
   });
 
-  it("opens New page on the Pages board, focused on the step's watch", () => {
-    expect(method("  private renderHelpSheet() {")).toContain(`this.goTo(deviceListPath("pages", watch)!)`);
+  it("opens New page on the Pages board, focused on the step's device", () => {
+    expect(method("  private renderHelpSheet() {")).toContain(`this.goTo(deviceListPath("pages", device)!)`);
+  });
+
+  it("counts the iPhones' own pages on a home that keeps them", () => {
+    expect(method("  private gettingStarted(): GettingStarted {")).toContain("gettingStarted(this.owners, this.devicePages, this.sharedWatch, this.phonePages)");
+    expect(method("  private async loadWatchAppSync(again: boolean) {")).toContain("pages = devicesWithPages(summary, [...watches, ...phones]);");
   });
 
   it("puts focus back on the Help button when the sheet closes by itself", () => {

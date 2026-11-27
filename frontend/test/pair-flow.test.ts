@@ -29,6 +29,9 @@ import {
   pairSubtitle,
   pairedFactsLine,
   pairedHeadline,
+  WELCOME_EASY_TITLE,
+  WELCOME_PICK_LINE,
+  welcomeEasyText,
 } from "../src/pair-flow.js";
 import { pairCodeStepsForAny } from "../src/watch-settings.js";
 
@@ -66,7 +69,13 @@ describe("the words of each step", () => {
   it("gives a watch its own steps, an iPhone its own, and both the shared ones when nobody said", () => {
     expect(pairCodeTitle("watch")).toBe("Type the watch's code");
     expect(pairCodeSteps("watch")[0]).toBe("On the watch, open HouseLit and choose Pair with Home Assistant.");
-    expect(pairCodeSteps("iphone")[1]).toBe("Choose Show a code instead, and pick this Home Assistant.");
+    // A new iPhone opens on Connect your home, with Show a code under Other
+    // ways to connect; one already set up reaches it from Settings, Homes.
+    expect(pairCodeSteps("iphone")).toEqual([
+      "On the phone, open HouseLit. On Connect your home, tap Other ways to connect, then Show a code.",
+      "Already set up? In Settings, tap Homes, then Add Another Home, then Show a code instead.",
+      "Pick this Home Assistant if it asks. The phone shows a 6-character code. Type it here.",
+    ]);
     expect(pairCodeSteps(undefined)).toBe(pairCodeStepsForAny());
     expect(pairCodeTitle(undefined)).toBe("Type the code");
   });
@@ -134,7 +143,7 @@ describe("plain words", () => {
       PAIR_CHOICE_TITLE, pairQrTitle(), PAIR_TO_CODE_TEXT, pairToQrText(), PAIR_TO_QR_IPHONE_TEXT,
       ...PAIR_CHOICES.flatMap((c) => [c.label, c.line]),
       ...pairCodeSteps("watch"), ...pairCodeSteps("iphone"),
-      pairChoiceNote(true), pairChoiceNote(false),
+      pairChoiceNote(true), pairChoiceNote(false), WELCOME_EASY_TITLE, welcomeEasyText(), WELCOME_PICK_LINE,
       PAIR_NEXT_PAGE.title, PAIR_NEXT_PAGE.line, PAIR_NEXT_PAGE.action, PAIR_NEXT_OPEN.title, PAIR_NEXT_OPEN.line,
     ];
     for (const w of words) expect(w).not.toMatch(/ \x2d |\u2013|\u2014/);

@@ -929,6 +929,21 @@ export const homeStyles = css`
   .hw-choice-t b { font-size: 14px; font-weight: 500; }
   .hw-choice.on .hw-choice-t b { color: var(--wa-green); }
   .hw-choice-t span { font-size: 11.5px; color: var(--wa-muted); }
+  /* The easy way, over Pick one: one sign in on the iPhone, in a soft
+     green card with the phone at its left. */
+  .hw-easy {
+    display: flex; align-items: flex-start; gap: 14px; padding: 14px 16px; border-radius: 16px;
+    background: color-mix(in srgb, var(--wa-hue-green) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--wa-hue-green) 28%, transparent);
+  }
+  .hw-easy-i {
+    flex: none; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;
+    background: color-mix(in srgb, var(--wa-hue-green) 16%, transparent); color: var(--wa-green);
+  }
+  .hw-easy-i svg { width: 18px; height: 18px; }
+  .hw-easy-t { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .hw-easy-t b { font-size: 14px; font-weight: 500; color: var(--wa-green); }
+  .hw-easy-t span { font-size: 13px; line-height: 1.5; color: var(--wa-ink); overflow-wrap: anywhere; }
   /* Pair it: the pairing card for the device picked, lit green. */
   .hw-pair {
     --c: var(--wa-hue-green); --lo-fill: var(--wa-card); --lo-mid: var(--wa-card-mid);

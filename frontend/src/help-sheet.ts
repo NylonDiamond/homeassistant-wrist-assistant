@@ -23,13 +23,13 @@ import {
   NEW_PAGE_LABEL,
   OPEN_APP_STORE_LABEL,
   PAIR_DEVICE_LABEL,
-  PAIR_FIRST_TEXT,
   REPORT_PROBLEM_URL,
   SETUP_GUIDE_URL,
   type StepId,
   TROUBLESHOOTING_URL,
   doneWords,
   helpStepWords,
+  updateFirstText,
 } from "./getting-started.js";
 import { BAR_TABS, type WatchScreen, iphoneScreenOf, tabOfRoute, watchScreenOf, watchScreenSentence } from "./shell.js";
 import { uiIcon } from "./ui-icons.js";
@@ -197,7 +197,8 @@ export interface HelpSheetInput {
   /** The dialog closed itself: Escape, the X, or a click on the backdrop. */
   onClosed: () => void;
   onPair: () => void;
-  onNewPage: (watch: string) => void;
+  /** Open Pages on this device: a watch, or an iPhone. */
+  onNewPage: (device: string) => void;
   /** Open the complication editor's own Help. Given only on the
    * Complications tab, where that dialog lives. */
   onEditorHelp?: () => void;
@@ -219,10 +220,10 @@ export function renderHelpSheet(input: HelpSheetInput): TemplateResult {
         : html`<a class="hs-act" href=${APP_STORE_URL} target="_blank" rel="noopener noreferrer">${OPEN_APP_STORE_LABEL}</a>`;
     }
     if (id === "pair") return html`<button type="button" class="hs-act" @click=${input.onPair}>${PAIR_DEVICE_LABEL}</button>`;
-    const watch = gs.watch;
-    return watch === undefined
-      ? html`<span class="hs-why">${PAIR_FIRST_TEXT}</span>`
-      : html`<button type="button" class="hs-act" @click=${() => input.onNewPage(watch)}>${NEW_PAGE_LABEL}</button>`;
+    const device = gs.device;
+    return device === undefined
+      ? html`<span class="hs-why">${updateFirstText()}</span>`
+      : html`<button type="button" class="hs-act" @click=${() => input.onNewPage(device)}>${NEW_PAGE_LABEL}</button>`;
   };
   const step = (id: StepId) => {
     const done = gs.steps.find((s) => s.id === id)?.done === true;

@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { homeChoiceArt } from "../src/home-art.js";
 import { homeStyles } from "../src/home.js";
-import { PAIR_WEB_LINK, pairQrLink } from "../src/pair-flow.js";
+import { PAIR_WEB_LINK, WELCOME_EASY_TITLE, WELCOME_PICK_LINE, pairQrLink, welcomeEasyText } from "../src/pair-flow.js";
 import { pairQrSteps } from "../src/watch-settings.js";
 
 const SOURCE = readFileSync(join(__dirname, "..", "src", "panel.ts"), "utf8");
@@ -120,6 +120,17 @@ describe("the welcome's wiring", () => {
     expect([...at].sort((a, b) => a - b)).toEqual(at);
     expect(welcome).not.toContain("first page");
     expect(welcome).not.toContain("first widget");
+  });
+
+  it("leads step 2 with the easy way: one sign in on the iPhone, which sets the watch up too", () => {
+    expect(welcome).toContain('${step(2, "Pick one", WELCOME_PICK_LINE, html`<div class="hb-stage hw-stage">');
+    expect(welcome).toContain('<span class="hw-easy-t"><b>${WELCOME_EASY_TITLE}</b><span>${welcomeEasyText()}</span></span>');
+    // Drawn over the step's own head, so it reads before Pick one.
+    const step = welcome.slice(welcome.indexOf("const step = ("), welcome.indexOf("</li>`;"));
+    expect(step.indexOf("${lead}")).toBeLessThan(step.indexOf('<div class="hw-step-head">'));
+    expect(WELCOME_EASY_TITLE).toBe("The easy way");
+    expect(welcomeEasyText()).toBe("Open HouseLit on your phone and sign in. The phone pairs, and an Apple Watch sets itself up from its iPhone. Nothing to type here.");
+    expect(WELCOME_PICK_LINE).toBe("Or pair one here. Which device is it? You can pair the other one later.");
   });
 
   it("links the App Store and shows it as a QR code", () => {

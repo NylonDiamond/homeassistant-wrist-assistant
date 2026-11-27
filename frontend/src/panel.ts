@@ -152,7 +152,7 @@ import { ASLEEP_NOTE, asleepRowWords, isAsleep, renderSyncPill, syncPillDevices,
 import { renderSharedTabView } from "./shared-tab/hook.js";
 import { type HomeFace, type HomeFacePicture, homeChoiceArt, homeMiniArt, homePhoneArt, homeWatchArt } from "./home-art.js";
 import { gateVersion, nounFor, ownerIsAndroid, platformNoun, platformOf, generalCopy, androidHereNow } from "./device-platform.js";
-import { APP_STORE_URL, type GettingStarted, PLAY_STORE_URL, SETUP_GUIDE_URL, TROUBLESHOOTING_URL, gettingStarted, watchesWithPages } from "./getting-started.js";
+import { APP_STORE_URL, type GettingStarted, PLAY_STORE_URL, SETUP_GUIDE_URL, TROUBLESHOOTING_URL, devicesWithPages, gettingStarted } from "./getting-started.js";
 import { type QrPicture, qrPicture } from "./qr-code.js";
 import { helpSheetStyles, renderHelpSheet } from "./help-sheet.js";
 import { renderTeachCard, teachStyles } from "./teach-loop.js";
@@ -442,7 +442,7 @@ import {
 import { domainIcon } from "./domain-icons.js";
 import { WatchSettings, watchSettingsStyles } from "./watch-settings-view.js";
 import { PairWatchCard, renderPairNext } from "./watch-pair-view.js";
-import { OLD_APP_PAIR_NOTE, type PairChoice, pairChoiceNote, pairNextStatus, pairedFactsLine } from "./pair-flow.js";
+import { OLD_APP_PAIR_NOTE, type PairChoice, WELCOME_EASY_TITLE, WELCOME_PICK_LINE, pairChoiceNote, pairNextStatus, pairedFactsLine, welcomeEasyText } from "./pair-flow.js";
 import { MOVE_WAIT_ENDED_EVENT, firstSaveAskText, noRecordStart, phoneMovesOf, seedMayLand, settingsWatches, waitsForWatchSeed, watchName } from "./watch-settings.js";
 import { PHONE_PAGES_UPDATE_TEXT, PHONE_PAGES_UPDATE_TITLE, hasPhoneAwaitingUpdate, iphoneAddressFor, iphoneDevices, isPhoneId, phoneAwaitsUpdate, phonePagesOn } from "./phone-pages.js";
 import { notForIphoneText, watchCommandError } from "./watch-pages/save-note.js";
@@ -1701,11 +1701,12 @@ export class WristAssistantPanel extends LitElement {
   /** Each watch's pages, status pages and Control Center counts, from the
    * same summary as `watchAppSyncs`, for Home's cards. */
   @state() private watchCounts: ReadonlyMap<string, Partial<Record<DeviceCountKind, number>>> = new Map();
-  /** The watches with a page of their own in Home Assistant, from the same
-   * summary, for the getting started steps (`getting-started.ts`). Undefined
-   * until the summary is read, so the welcome card never flashes up in a
-   * home that already has pages. */
-  @state() private watchPages?: ReadonlySet<string>;
+  /** The devices with a page of their own in Home Assistant (the watches,
+   * and the iPhones on a home with phone pages), from the same summary, for
+   * the getting started steps (`getting-started.ts`). Undefined until the
+   * summary is read, so the steps never flash up as new in a home that
+   * already has pages. */
+  @state() private devicePages?: ReadonlySet<string>;
   /** The Help sheet the tab bar's Help button opens, on every tab. */
   @state() private helpSheetOpen = false;
   /** When the owners list was last read, so Home can age each device's
@@ -11455,12 +11456,13 @@ export class WristAssistantPanel extends LitElement {
 
   // ── getting started and the Help sheet ────────────────────────────────
 
-  /** The three getting started steps, as the Help sheet shows them. */
+  /** The three getting started steps, as the Help sheet shows them. An
+   * iPhone's own pages count on a home that keeps them. */
   private gettingStarted(): GettingStarted {
-    return gettingStarted(this.owners, this.watchPages, this.sharedWatch);
+    return gettingStarted(this.owners, this.devicePages, this.sharedWatch, this.phonePages);
   }
 
-  /** Open the Help sheet. Which watches hold a page is read on the way into
+  /** Open the Help sheet. Which devices hold a page is read on the way into
    * Home, so a sheet opened first on another tab asks for it here. */
   private openHelpSheet() {
     this.helpSheetOpen = true;
@@ -11491,7 +11493,7 @@ export class WristAssistantPanel extends LitElement {
       version: this.panel?.config?.version,
       onClosed: () => this.closeHelpSheet(true),
       onPair: () => { if (home()) this.openPairDialog(); },
-      onNewPage: (watch) => { this.closeHelpSheet(false); this.goTo(deviceListPath("pages", watch)!); },
+      onNewPage: (device) => { this.closeHelpSheet(false); this.goTo(deviceListPath("pages", device)!); },
       ...(tabOfRoute(this.route) === "complications"
         ? { onEditorHelp: () => { this.closeHelpSheet(false); this.helpTab = "basics"; this.helpOpen = true; } }
         : {}),
@@ -12360,7 +12362,7 @@ export class WristAssistantPanel extends LitElement {
       const summary = await fetchWatchConfigSummary(hass);
       next = summaryWatchAppSyncs(summary, watches, phones);
       counts = summaryCounts(summary, [...watches, ...phones]);
-      pages = watchesWithPages(summary, watches);
+      pages = devicesWithPages(summary, [...watches, ...phones]);
     } catch (err) {
       if (!summaryUnknown(err)) {
         // Not read: let the next visit to Home ask again.
@@ -12376,7 +12378,7 @@ export class WristAssistantPanel extends LitElement {
     this.watchAppSyncs = next;
     this.watchCounts = counts;
     // An integration with no summary cannot say; the last reading stands.
-    if (pages !== undefined) this.watchPages = pages;
+    if (pages !== undefined) this.devicePages = pages;
   }
 
   /** The household as people, each Home Assistant user's devices together
@@ -20758,7 +20760,9 @@ export class WristAssistantPanel extends LitElement {
 
   /**
    * Home in a home with no devices yet: a welcome in three steps, top to
-   * bottom. Install the app (the App Store, as a link and a QR code); pick
+   * bottom. Install the app (the App Store, as a link and a QR code); the
+   * easy way over step 2, one sign in on the iPhone that pairs it and lets
+   * the watch set itself up from it; else pick
    * the device, a watch or an iPhone drawn on Home's lit stage, the one
    * picked inside a thin green arc that turns slowly; then pair it, with the
    * pairing card for that device (`welcomePair`): a code to type for a
@@ -20782,9 +20786,10 @@ export class WristAssistantPanel extends LitElement {
     };
     const qr = this.appStoreQr;
     const playQr = this.playStoreQr;
-    const step = (n: number, title: string, line: string, body: TemplateResult) => html`<li class="hw-step">
+    const step = (n: number, title: string, line: string, body: TemplateResult, lead: TemplateResult | typeof nothing = nothing) => html`<li class="hw-step">
         <span class="hw-rail" aria-hidden="true"><span class="hw-num">${n}</span><span class="hw-line"></span></span>
         <div class="hw-body">
+          ${lead}
           <div class="hw-step-head"><h2>${title}</h2><span>${line}</span></div>
           ${body}
         </div>
@@ -20813,12 +20818,15 @@ export class WristAssistantPanel extends LitElement {
                 <figcaption><b>Scan with your Android phone</b><span>It opens the Google Play page.</span></figcaption>
               </figure>` : nothing}
             </div>`)}
-          ${step(2, "Pick one", "Which device are you pairing now? You can pair the other one later.", html`<div class="hb-stage hw-stage">
+          ${step(2, "Pick one", WELCOME_PICK_LINE, html`<div class="hb-stage hw-stage">
               <span class="hb-floor"></span>
               <div class="hw-choices" role="group" aria-label="Pick one">
                 ${choice("watch", generalCopy("Apple Watch", "Watch"), "Pairs with a code")}
                 ${choice("iphone", generalCopy("iPhone", "Phone"), "Pairs with a QR code")}
               </div>
+            </div>`, html`<div class="hw-easy">
+              <span class="hw-easy-i" aria-hidden="true">${uiIcon("phone")}</span>
+              <span class="hw-easy-t"><b>${WELCOME_EASY_TITLE}</b><span>${welcomeEasyText()}</span></span>
             </div>`)}
           ${step(3, picked === "iphone" ? generalCopy("Pair your iPhone", "Pair your phone") : "Pair your watch",
             picked === "iphone" ? generalCopy("Scan the code with the iPhone's Camera.", "Scan the code with the phone's camera.") : "The watch shows a code. Type it here.",

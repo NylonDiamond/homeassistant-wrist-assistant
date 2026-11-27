@@ -21,7 +21,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { COMP_WHERE_HINTS, compCell, compGreyNote, compLeftOutText } from "../src/complication-board.js";
 import { androidHereNow, homeHasAndroid, noteHomeDevices, setAndroidHere } from "../src/device-platform.js";
-import { PLAY_STORE_URL, gettingStarted, helpStepWords } from "../src/getting-started.js";
+import { PLAY_STORE_URL, gettingStarted, helpStepWords, pairStepTodoText, updateFirstText } from "../src/getting-started.js";
 import { fetchOwners, type OwnerSummary } from "../src/ha-api.js";
 import { helpScreen, pagesPhoneTilesText, renderHelpSheet } from "../src/help-sheet.js";
 import { deviceSheetTabs, homeDoorLook, homeLibraryLead } from "../src/home.js";
@@ -29,7 +29,7 @@ import { previewLabel } from "../src/library/item-mode.js";
 import { previewNote } from "../src/library/new-dialog.js";
 import { tickSkipsTitle } from "../src/library/ticks.js";
 import { kindTitle, newSummary } from "../src/newComplication.js";
-import { PAIR_CHOICES, pairCodeSteps, pairCodeTitle, pairQrTitle, pairSubtitle, pairToQrText } from "../src/pair-flow.js";
+import { PAIR_CHOICES, pairCodeSteps, pairCodeTitle, pairQrTitle, pairSubtitle, pairToQrText, welcomeEasyText } from "../src/pair-flow.js";
 import { SCREEN_HOW_TO } from "../src/screen-howto.js";
 import { notOnADeviceHelp, notOnADeviceLine, notOnADeviceUnsavedLine } from "../src/send-state.js";
 import { TAB_LABEL, WATCH_SCREENS } from "../src/shell.js";
@@ -86,6 +86,9 @@ function probes(): Record<string, unknown> {
     compLeftOutIphone: compLeftOutText("iphone", 1),
     getAppDone: helpStepWords("app", gettingStarted([phoneRow], undefined)).text,
     getAppTodo: helpStepWords("app", gettingStarted([], undefined)).text,
+    pairStepTodo: pairStepTodoText(),
+    updateFirst: updateFirstText(),
+    welcomeEasy: welcomeEasyText(),
     helpHome: helpScreen(undefined).text,
     helpShared: helpScreen({ path: "/shared", prefix: "/x" } as never).text,
     helpComplications: helpScreen({ path: "/complications", prefix: "/x" } as never).text,
