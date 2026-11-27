@@ -12,6 +12,48 @@
 import type { OneLookTileStyle } from "./layout.js";
 import { oneLookMetrics, oneLookUnitTextSize, type OneLookDevice, type OneLookMetrics } from "./metrics.js";
 
+/** A number's decimals are drawn at this share of its size. */
+export const ONE_LOOK_FRACTION_SCALE = 0.68;
+
+/**
+ * A tile's number split into runs, its decimals small (`OneLookFigure` in the
+ * app's `OneLookText.swift`): every "." between two digits starts a small run
+ * that takes the digits after it, so "15.6" is "15" and ".6", "1,245.8" keeps
+ * "1,245" whole and "20.5–24.5°" shrinks both decimals. The panel writes
+ * numbers with "."; the device splits at its own locale's separator.
+ */
+export function oneLookFigureRuns(figure: string): { text: string; small: boolean }[] {
+  const chars = [...figure];
+  const isDigit = (c: string | undefined) => c !== undefined && c >= "0" && c <= "9";
+  const runs: { text: string; small: boolean }[] = [];
+  let current = "";
+  let small = false;
+  const flush = () => {
+    if (current !== "") runs.push({ text: current, small });
+    current = "";
+  };
+  chars.forEach((c, i) => {
+    if (!small && c === "." && isDigit(chars[i - 1]) && isDigit(chars[i + 1])) {
+      flush();
+      small = true;
+    } else if (small && !isDigit(c)) {
+      flush();
+      small = false;
+    }
+    current += c;
+  });
+  flush();
+  return runs;
+}
+
+/** A number's drawn width: each run in bold at its own size. */
+export function oneLookFigureWidth(figure: string, size: number, tracking: number, measurer: TextMeasurer): number {
+  return oneLookFigureRuns(figure).reduce(
+    (sum, run) => sum + measurer.width(run.text, run.small ? size * ONE_LOOK_FRACTION_SCALE : size, "bold", true, tracking),
+    0,
+  );
+}
+
 /** The weights One Look draws text in: words (400), the bridge look's
  * names (500), names and units (600), numbers (700). */
 export type OneLookTextWeight = "regular" | "medium" | "semibold" | "bold";
@@ -399,13 +441,13 @@ export class OneLookTextFitter {
           tail = undefined;
         }
         if (tail !== undefined) {
-          const w = this.width(state.figure, m.figureSize, "bold", true)
+          const w = oneLookFigureWidth(state.figure, m.figureSize, m.nameTracking, this.measurer)
             + this.width(unitText ?? "", unitSize, "semibold", true)
             + this.width(" " + tail, m.wordSize, "regular");
           if (w > room) tail = undefined;
         }
         if (numberFloor !== undefined && tail === undefined) {
-          const w = this.width(state.figure, m.figureSize, "bold", true)
+          const w = oneLookFigureWidth(state.figure, m.figureSize, m.nameTracking, this.measurer)
             + this.width(unitText ?? "", unitSize, "semibold", true);
           if (w > room) {
             const share = floor20(room / w);
@@ -468,7 +510,7 @@ export function oneLookStateWidth(state: StateFit, m: OneLookMetrics, measurer: 
     measurer.width(s, size, weight, rounded, m.nameTracking);
   const p = state.parts;
   if (p.kind === "number") {
-    return width(p.figure, state.size, "bold", true)
+    return oneLookFigureWidth(p.figure, state.size, m.nameTracking, measurer)
       + width(p.unit ?? "", state.unitSize, "semibold", true)
       + (p.tail === undefined ? 0 : width(" " + p.tail, state.tailSize, "regular", false));
   }

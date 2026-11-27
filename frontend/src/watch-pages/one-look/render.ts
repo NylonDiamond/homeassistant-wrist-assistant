@@ -97,7 +97,7 @@ import { ONE_LOOK_FONT_FAMILIES, ONE_LOOK_OWN_FAMILY, oneLookCssWeight, oneLookM
 import { type OneLookArranged, arrangeHidesText, normalizeTileArrange, oneLookArrangeLayout } from "./arrange.js";
 import { type OneLookPhotoLight, oneLookGlowColour, oneLookLightPlacement } from "./glow.js";
 import { type OneLookTint, oneLookTintIsWhite, oneLookTintOf, oneLookTintRGB8 } from "./tint.js";
-import { NO_STATE, type OneLookTextWeight, type StateFit, type StateLine, type TextMeasurer, glyphAspectOf, glyphExtentOf } from "./text.js";
+import { NO_STATE, ONE_LOOK_FRACTION_SCALE, type OneLookTextWeight, type StateFit, type StateLine, type TextMeasurer, glyphAspectOf, glyphExtentOf, oneLookFigureRuns } from "./text.js";
 
 /** Which of a tile's own parts are left undrawn: the glyph (its icon or a
  * person's photo, and the glow with it), the name, and the state line. */
@@ -972,6 +972,16 @@ function textShadow(on: boolean, s: number): string {
   return on ? `;text-shadow:0 ${r2(0.5 * s)}px ${r2(1.5 * s)}px rgba(0, 0, 0, 0.25)` : "";
 }
 
+/** A number's runs inside its bold span, the decimals at their smaller
+ * size (`oneLookFigureRuns`), each tracked by its own size as the fitter
+ * measured it. Letter spacing is set again on a small run, since an em
+ * spacing is inherited as the parent's length. */
+function figureRuns(figure: string, size: number, s: number, trackingEm: number): TemplateResult {
+  return html`${oneLookFigureRuns(figure).map((run) => run.small
+    ? html`<span class="ol-fraction" style=${`font-size:${r2(size * ONE_LOOK_FRACTION_SCALE * s)}px;letter-spacing:${trackingEm}em`}>${run.text}</span>`
+    : run.text)}`;
+}
+
 /** A state line: the number in bold with its unit at 84% and the tail
  * after it, or a word (the amber dot before it when it asks), all in the
  * tile font (`ONE_LOOK_OWN_FAMILY`). The
@@ -983,7 +993,7 @@ function stateLine(state: StateFit, palette: OneLookPalette, device: OneLookDevi
   const ink2 = oneLookInkCss(palette.ink2);
   const p = state.parts;
   if (p.kind === "number") {
-    return html`<span class="ol-line"><span class="ol-figure" style=${`font:700 ${r2(state.size * s)}px/1 ${family};letter-spacing:${oneLookMetrics(device).nameTracking}em;color:${ink}`}>${p.figure}</span>${p.unit === undefined ? nothing
+    return html`<span class="ol-line"><span class="ol-figure" style=${`font:700 ${r2(state.size * s)}px/1 ${family};letter-spacing:${oneLookMetrics(device).nameTracking}em;color:${ink}`}>${figureRuns(p.figure, state.size, s, oneLookMetrics(device).nameTracking)}</span>${p.unit === undefined ? nothing
       : html`<span class="ol-unit" style=${`font:600 ${r2(state.unitSize * s)}px/1 ${family};color:${ink};opacity:${ONE_LOOK_UNIT_OPACITY}`}>${p.unit}</span>`}${p.tail === undefined ? nothing
       : html`<span class="ol-tail" style=${`font:400 ${r2(state.tailSize * s)}px/1 ${family};color:${ink2}`}>${` ${p.tail}`}</span>`}</span>`;
   }
@@ -1050,7 +1060,7 @@ function bigValueLayer(model: OneLookPreviewModel, s: number): TemplateResult | 
   const family = ONE_LOOK_OWN_FAMILY;
   const shadow = textShadow(palette.textShadow && device === "phone" && model.style.stateShadow, s);
   return html`<span class="ol-big" style=${`${rectCss(rect, s)}${shadow}`}>
-    <span style=${`height:${r2(m.bigSize * 1.02 * s)}px;font:700 ${r2(m.bigSize * s)}px/${r2(m.bigSize * 1.02 * s)}px ${family};letter-spacing:-0.02em;color:${oneLookInkCss(palette.ink)}`}>${big.figure}</span>
+    <span style=${`height:${r2(m.bigSize * 1.02 * s)}px;font:700 ${r2(m.bigSize * s)}px/${r2(m.bigSize * 1.02 * s)}px ${family};letter-spacing:-0.02em;color:${oneLookInkCss(palette.ink)}`}>${figureRuns(big.figure, m.bigSize, s, -0.02)}</span>
     ${big.sub === undefined ? nothing : html`<span style=${`margin-top:${r2(m.bigSubGap * s)}px;font:600 ${r2(m.bigSubSize * s)}px/${r2(m.bigSubSize * 1.2 * s)}px ${family};color:${oneLookInkCss(palette.ink2)}`}>${big.sub}</span>`}
   </span>`;
 }

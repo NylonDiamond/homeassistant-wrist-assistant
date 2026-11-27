@@ -35,6 +35,7 @@ import {
   ONE_LOOK_DEFAULT_GLYPH_EXTENT,
   ONE_LOOK_NARROW_MIN,
   OneLookTextFitter,
+  oneLookFigureWidth,
   oneLookStateWidth,
   type NameFit,
   type OneLookTextDesign,
@@ -687,7 +688,7 @@ function stacked(input: OneLookLayoutInput, fitter: OneLookTextFitter, s: Step):
     || (device === "phone" && input.colSpan >= ONE_LOOK_PHONE_BIG_COLUMNS && input.rowSpan >= ONE_LOOK_STRIP_ROWS);
   const big = input.bigValue;
   if (big !== undefined && bigRoom) {
-    const figureWidth = fitter.measurer.width(big.figure, m.bigSize, "bold", true, m.nameTracking);
+    const figureWidth = oneLookFigureWidth(big.figure, m.bigSize, m.nameTracking, fitter.measurer);
     const subWidth = big.sub === undefined ? 0 : fitter.measurer.width(big.sub, m.bigSubSize, "semibold", true, m.nameTracking);
     const bigWidth = Math.max(figureWidth, subWidth);
     const left = avail - bigWidth - m.bigGap;
