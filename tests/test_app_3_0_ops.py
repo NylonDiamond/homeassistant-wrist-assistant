@@ -276,7 +276,7 @@ def test_webhook_provision_is_a_signed_refusal_saying_they_were_retired(ops) -> 
     # outdated integration: it shows "Webhook setup failed: <error>".
     assert (reply.status, reply.body) == (
         410,
-        {"ok": False, "error": "Wrist Webhooks were retired"},
+        {"ok": False, "error": "Webhooks were retired"},
     )
 
 

@@ -2884,7 +2884,7 @@ async def _op_webhook_provision(ctx: _OpContext) -> Response:
     only in 3.0.1, so no shipped app reaches it.
     """
     return ctx.signed_json(
-        {"ok": False, "error": "Wrist Webhooks were retired"}, status=410
+        {"ok": False, "error": "Webhooks were retired"}, status=410
     )
 
 
