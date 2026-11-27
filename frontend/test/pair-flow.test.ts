@@ -71,9 +71,12 @@ describe("the words of each step", () => {
     expect(pairCodeSteps("watch")[0]).toBe("On the watch, open HouseLit and choose Pair with Home Assistant.");
     // A new iPhone opens on Connect your home, with Show a code under Other
     // ways to connect; one already set up reaches it from Settings, Homes.
+    // An Android phone opens on Welcome, whose Get Started leads to Show a
+    // code instead. The panel cannot tell which phone it is, so both show.
     expect(pairCodeSteps("iphone")).toEqual([
-      "On the phone, open HouseLit. On Connect your home, tap Other ways to connect, then Show a code.",
-      "Already set up? In Settings, tap Homes, then Add Another Home, then Show a code instead.",
+      "On an iPhone, open HouseLit. On Connect your home, tap Other ways to connect, then Show a code.",
+      "iPhone already set up? In Settings, tap Homes, then Add Another Home, then Show a code instead.",
+      "On an Android phone, open HouseLit, tap Get Started, then Show a code instead.",
       "Pick this Home Assistant if it asks. The phone shows a 6-character code. Type it here.",
     ]);
     expect(pairCodeSteps(undefined)).toBe(pairCodeStepsForAny());

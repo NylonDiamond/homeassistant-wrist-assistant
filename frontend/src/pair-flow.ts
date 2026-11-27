@@ -109,8 +109,9 @@ export function pairCodeTitle(device: PairChoice | undefined): string {
  * on Connect your home, where Show a code is under Other ways to connect; an
  * iPhone already set up reaches it from Settings, Homes, Add Another Home,
  * whose Pair with Home Assistant screen offers Show a code instead (the app's
- * `ConnectHomeView`, `OtherWaysSheet` and `PhonePairingViews`). Without an
- * answer, the steps cover both. */
+ * `ConnectHomeView`, `OtherWaysSheet` and `PhonePairingViews`). A phone's
+ * steps name the Android app's screens too. Without an answer, the steps
+ * cover both kinds. */
 export function pairCodeSteps(device: PairChoice | undefined): readonly string[] {
   if (device === "watch") {
     return [
@@ -120,12 +121,24 @@ export function pairCodeSteps(device: PairChoice | undefined): readonly string[]
     ];
   }
   if (device === "iphone") {
-    const phone = generalCopy("iPhone", "phone");
-    return [
-      `On the ${phone}, open HouseLit. On Connect your home, tap Other ways to connect, then Show a code.`,
-      "Already set up? In Settings, tap Homes, then Add Another Home, then Show a code instead.",
-      `Pick this Home Assistant if it asks. The ${phone} shows a 6-character code. Type it here.`,
-    ];
+    // Every home reads the phone words (`generalCopy`), and the panel cannot
+    // tell an iPhone from an Android phone before it pairs, so both apps'
+    // screens are named. The Android app opens on Welcome: Get Started, then
+    // Pair with Home Assistant, whose Show a code instead shows the code
+    // (`strings_onboarding.xml` in the Android repo).
+    return generalCopy(
+      [
+        "On the iPhone, open HouseLit. On Connect your home, tap Other ways to connect, then Show a code.",
+        "Already set up? In Settings, tap Homes, then Add Another Home, then Show a code instead.",
+        "Pick this Home Assistant if it asks. The iPhone shows a 6-character code. Type it here.",
+      ],
+      [
+        "On an iPhone, open HouseLit. On Connect your home, tap Other ways to connect, then Show a code.",
+        "iPhone already set up? In Settings, tap Homes, then Add Another Home, then Show a code instead.",
+        "On an Android phone, open HouseLit, tap Get Started, then Show a code instead.",
+        "Pick this Home Assistant if it asks. The phone shows a 6-character code. Type it here.",
+      ],
+    );
   }
   return pairCodeStepsForAny();
 }

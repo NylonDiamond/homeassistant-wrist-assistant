@@ -59,8 +59,9 @@
   ],
   "pairCodeTitle": "Type the phone's code",
   "pairCodeStepsIphone": [
-    "On the phone, open HouseLit. On Connect your home, tap Other ways to connect, then Show a code.",
-    "Already set up? In Settings, tap Homes, then Add Another Home, then Show a code instead.",
+    "On an iPhone, open HouseLit. On Connect your home, tap Other ways to connect, then Show a code.",
+    "iPhone already set up? In Settings, tap Homes, then Add Another Home, then Show a code instead.",
+    "On an Android phone, open HouseLit, tap Get Started, then Show a code instead.",
     "Pick this Home Assistant if it asks. The phone shows a 6-character code. Type it here."
   ],
   "pairCodeStepsAny": [
