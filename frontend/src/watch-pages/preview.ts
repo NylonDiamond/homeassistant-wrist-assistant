@@ -2430,7 +2430,7 @@ function templateFace(tile: WatchPageTile, width: number, height: number, box: s
     const content = contentOf(f.width, f.height - band, zs, surface.ink, shadow, { ink: surface.ink2, faded: false });
     const border = watchTileBorder(tile, surface.active, watchTileFallbackInk(tile, input.page, input.states));
     return html`<div class="wp-tile wp-tpl ol-tile" title=${hint ?? nothing}
-      style=${`${box}border-radius:${Math.round(surface.radius * zs * 100) / 100}px;background:${surface.ground};padding:${band * zs}px ${TEMPLATE_TILE_PAD * zs}px 0`}>
+      style=${`${box}border-radius:${Math.round(surface.radius * zs * 100) / 100}px;background:${surface.ground};padding:${band * zs}px ${TEMPLATE_TILE_PAD * zs}px 0${surface.glow === undefined ? "" : `;box-shadow:${surface.glow}`}`}>
       ${surface.layers}
       ${tileUnderlay(tile, input, surface.active, { width: f.width, height: f.height }, zs)}
       ${band > 0 ? templateTitleLine(tile, surface.ink2, zs, TEMPLATE_TILE_PAD, shadow) : nothing}

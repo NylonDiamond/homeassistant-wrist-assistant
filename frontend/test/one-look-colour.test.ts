@@ -15,6 +15,9 @@ import {
   type OneLookRGB,
   oneLookBareGlyph,
   oneLookBarColour,
+  oneLookLiftCss,
+  oneLookTopLightOpacity,
+  oneLookUnderGlowCss,
   oneLookBlendCss,
   oneLookBrightnessMixed,
   oneLookColourStops,
@@ -471,5 +474,24 @@ describe("what the views paint", () => {
     expect(oneLookBlendCss(fill.stops)).toBe("linear-gradient(135deg, #25262A 0%, #202125 55%, #1D1E21 100%)");
     expect(oneLookInkCss(white(0.3))).toBe("rgba(255, 255, 255, 0.3)");
     expect(oneLookInkCss(rgb("#8F7BEA"))).toBe("#8F7BEA");
+  });
+});
+
+describe("the iPhone's depth", () => {
+  // `everyTileLiftsOnTheIPhone` (the dark page) and `theTopLightIsTheIPhonesOnly`.
+  it("lifts every coloured tile with a darker shade under its bottom edge", () => {
+    const plain = palette({ role: { kind: "plain" }, hue: "#0A84FF" });
+    const graphite = palette({ role: { kind: "plain" } });
+    const wristDown = palette({ role: { kind: "plain" }, hue: "#0A84FF", aod: true });
+    expect(oneLookLiftCss(plain)).toBe(`0 4px 3px -2px ${oneLookInkCss(oneLookMix(plain.base, [0, 0, 0], 0.5), 0.9)}`);
+    expect(oneLookUnderGlowCss(plain)).toBeUndefined();
+    expect(oneLookLiftCss(graphite)).toBeUndefined();
+    expect(oneLookLiftCss(wristDown)).toBeUndefined();
+  });
+
+  it("draws the top light on colour and graphite, not on a camera", () => {
+    expect(oneLookTopLightOpacity(palette({ role: { kind: "plain" }, hue: "#0A84FF" }))).toBe(0.45);
+    expect(oneLookTopLightOpacity(palette({ role: { kind: "plain" } }))).toBe(0.16);
+    expect(oneLookTopLightOpacity(palette({ role: { kind: "camera" } }))).toBeUndefined();
   });
 });

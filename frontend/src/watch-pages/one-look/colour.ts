@@ -878,10 +878,41 @@ export function oneLookScrimCss(): string {
   return `linear-gradient(to bottom, ${ONE_LOOK_CAMERA_SCRIM.map((r) => `rgba(0, 0, 0, ${cssNumber(r.opacity)}) ${cssNumber(r.location * 100)}%`).join(", ")})`;
 }
 
-/** The iPhone's under-glow as a CSS box shadow at `s` pixels per point
- * (the app's rounded rect 12 in a side, 12 down, blur 15), or undefined
+/** The iPhone's under-glow as a CSS box shadow at `s` pixels per virtual
+ * point (the app's rounded rect 7 in a side, 7 down, blur 8), or undefined
  * for a palette with no glow. The watch never draws it. */
 export function oneLookUnderGlowCss(palette: OneLookPalette, s = 1): string | undefined {
   if (palette.glow === undefined) return undefined;
-  return `0 ${cssNumber(12 * s)}px ${cssNumber(30 * s)}px ${cssNumber(-12 * s)}px ${oneLookInkCss(palette.glow, palette.glowOpacity)}`;
+  return `0 ${cssNumber(7 * s)}px ${cssNumber(16 * s)}px ${cssNumber(-7 * s)}px ${oneLookInkCss(palette.glow, palette.glowOpacity)}`;
+}
+
+/** The lift on a dark page (`OneLookSurface.liftDark*`): a darker shade of
+ * the tile's colour, mixed this far to black, at this opacity. */
+export const ONE_LOOK_LIFT_SHADE = 0.5;
+export const ONE_LOOK_LIFT_OPACITY = 0.9;
+
+/** The iPhone's lift on a dark page (`OneLookSurface.Lift`) as a CSS box
+ * shadow at `s` pixels per virtual point: a darker shade of a coloured
+ * tile's base peeking out under its bottom edge only (2 in a side, 4 down,
+ * a 3 blur), so the top and sides stay sharp. Undefined for graphite,
+ * cameras and wrist down. */
+export function oneLookLiftCss(palette: OneLookPalette, s = 1): string | undefined {
+  if (palette.surface !== "coloured" || palette.aod) return undefined;
+  const shade = oneLookMix(palette.base, K, ONE_LOOK_LIFT_SHADE);
+  return `0 ${cssNumber(4 * s)}px ${cssNumber(3 * s)}px ${cssNumber(-2 * s)}px ${oneLookInkCss(shade, ONE_LOOK_LIFT_OPACITY)}`;
+}
+
+/** The iPhone's fine light along a tile's top edge (`OneLookPalette.topLightOpacity`):
+ * 0.45 on colour, 0.16 on graphite, none on a camera or wrist down. */
+export function oneLookTopLightOpacity(palette: OneLookPalette): number | undefined {
+  if (palette.aod) return undefined;
+  if (palette.surface === "coloured") return 0.45;
+  if (palette.surface === "graphite") return 0.16;
+  return undefined;
+}
+
+/** The top light's paint at `s` pixels per virtual point, fading out 6
+ * points down (`OneLookSurface.topLightFade`). */
+export function oneLookTopLightCss(opacity: number, s = 1): string {
+  return `linear-gradient(to bottom, rgba(255, 255, 255, ${cssNumber(opacity)}) 0px, rgba(255, 255, 255, 0) ${cssNumber(6 * s)}px)`;
 }

@@ -421,9 +421,9 @@ describe("a look on a One Look tile", () => {
     }
     const day = html(renderOneLookTile(face(lamp(), "on", lit(LIGHT()), { device: "phone" })));
     const off = html(renderOneLookTile(face(lamp(), "off", lit(undefined), { device: "phone" })));
-    // The iPhone draws the watch's tile, zoomed (`OneLookZoom`): the watch
-    // casts no under-glow.
-    expect(tileStyle(day)).not.toContain("box-shadow");
+    // The iPhone draws the watch's tile, zoomed (`OneLookZoom`), and still
+    // casts its own depth: the lift and, lit, the under-glow.
+    expect(tileStyle(day)).toContain("box-shadow:");
     expect(tileStyle(day)).not.toBe(tileStyle(off));
     expect(rim(day)).not.toBe(rim(off));
   });

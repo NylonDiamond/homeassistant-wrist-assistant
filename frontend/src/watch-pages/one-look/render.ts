@@ -67,6 +67,9 @@ import {
   oneLookRimCss,
   oneLookScrimCss,
   oneLookUnderGlowCss,
+  oneLookLiftCss,
+  oneLookTopLightCss,
+  oneLookTopLightOpacity,
   ONE_LOOK_AMBER,
   ONE_LOOK_AMBER_DOT,
   ONE_LOOK_BAR_BORDER_OPACITY,
@@ -1392,9 +1395,9 @@ function borderLayer(model: OneLookPreviewModel, f: OneLookTileFaceInput, active
  * its own face. Under the clip: the fill, the pattern and effect, the
  * picture, the chart, then the content at the palette's content opacity
  * (the bar, the glyph, the button and the text, less the parts `hidden`
- * names), the rim and the
- * user's border. Outside it, on the iPhone, the under-glow of a lit coloured
- * tile.
+ * names), the rim, the iPhone's top light and the
+ * user's border. Outside it, on the iPhone, a coloured tile's lift and a
+ * lit tile's under-glow.
  */
 export function renderOneLookTile(given: OneLookTileFaceInput): TemplateResult {
   // On the iPhone the watch's tile at its virtual size, drawn the zoom
@@ -1406,7 +1409,10 @@ export function renderOneLookTile(given: OneLookTileFaceInput): TemplateResult {
   const { input, s } = f;
   const radius = oneLookCornerRadius(oneLookMetrics(device), layout.size);
   const { ground, layers } = fillLayers(model, s);
-  const glow = device === "phone" ? oneLookUnderGlowCss(palette, s) : undefined;
+  // The depth is the platform's: an iPhone tile drawn as the zoomed watch
+  // still casts it, in the virtual tile's points.
+  const onPhone = (f.platform ?? device) === "phone";
+  const glow = onPhone ? depthCss(palette, s) : undefined;
   const active = watchTilePreviewActive(f.tile, input.states);
   const fade = f.stub ? 0.7 : 1;
   const content = html`<span class="ol-content" style=${palette.contentOpacity < 1 ? `opacity:${palette.contentOpacity}` : nothing}>
@@ -1441,8 +1447,24 @@ export function renderOneLookTile(given: OneLookTileFaceInput): TemplateResult {
     ${chartLayer(model, s)}
     ${content}
     <span class="ol-rim" style=${`padding:${r2(rim * s)}px;background:${oneLookRimCss(palette.rimOpacity)}`}></span>
+    ${onPhone ? topLightLayer(palette, s) : nothing}
     ${borderLayer(model, f, active, radius)}
   </div>`;
+}
+
+/** The iPhone's shadows under a tile, as one CSS box shadow: the lift and,
+ * while lit, the under-glow. Undefined when neither draws. */
+function depthCss(palette: OneLookPalette, s: number): string | undefined {
+  const parts = [oneLookLiftCss(palette, s), oneLookUnderGlowCss(palette, s)].filter((p): p is string => p !== undefined);
+  return parts.length === 0 ? undefined : parts.join(", ");
+}
+
+/** The iPhone's top light (`OneLookSurface.TopLight`): a 0.6 point inside
+ * stroke, white along the top edge, gone 6 points down. */
+function topLightLayer(palette: OneLookPalette, s: number): TemplateResult | typeof nothing {
+  const opacity = oneLookTopLightOpacity(palette);
+  if (opacity === undefined) return nothing;
+  return html`<span class="ol-rim" style=${`padding:${r2(0.6 * s)}px;background:${oneLookTopLightCss(opacity, s)}`}></span>`;
 }
 
 // ── a template tile on One Look ──────────────────────────────────────────
@@ -1464,6 +1486,8 @@ export interface OneLookTemplateSurface {
   rim: TemplateResult;
   /** The tile's corner radius, in virtual points. */
   radius: number;
+  /** The iPhone's lift and under-glow, a CSS box shadow, or undefined. */
+  glow: string | undefined;
   /** The surface draws coloured (`palette.surface`), which the tile's
    * active-only border and effects read. */
   active: boolean;
@@ -1497,9 +1521,11 @@ export function oneLookTemplateSurface(given: OneLookTileFaceInput): OneLookTemp
     centred: oneLookCentredGlyph(device), style,
   }, measurerFor(device, f.input.icons));
   const { ground, layers } = fillLayers({ layout, palette } as OneLookPreviewModel, f.s);
-  const rim = html`<span class="ol-rim" style=${`padding:${r2(oneLookMetrics(device).rim * f.s)}px;background:${oneLookRimCss(palette.rimOpacity)}`}></span>`;
+  const onPhone = (f.platform ?? device) === "phone";
+  const rim = html`<span class="ol-rim" style=${`padding:${r2(oneLookMetrics(device).rim * f.s)}px;background:${oneLookRimCss(palette.rimOpacity)}`}></span>${onPhone ? topLightLayer(palette, f.s) : nothing}`;
+  const glow = onPhone ? depthCss(palette, f.s) : undefined;
   return {
-    face: f, palette, ground, layers, rim,
+    face: f, palette, ground, layers, rim, glow,
     radius: oneLookCornerRadius(oneLookMetrics(device), layout.size),
     active: palette.surface === "coloured",
     ink: oneLookInkCss(palette.ink),
