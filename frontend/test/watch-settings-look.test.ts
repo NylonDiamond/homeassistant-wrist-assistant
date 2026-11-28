@@ -610,8 +610,9 @@ it("leaves the shared catalog's shape alone", () => {
         // A Wear OS watch's own words for a crown row, and an Android
         // phone's for a row whose iPhone words name iOS.
         "wearLabel", "wearHelp", "androidHelp",
-        // An iPhone's own default (the pull menu, 2026-11-22).
-        "iphoneDefault",
+        // An iPhone's own default (the pull menu, 2026-11-22), and an
+        // Android phone's (2026-11-27).
+        "iphoneDefault", "androidDefault",
       ].includes(k)), s.key).toBe(true);
     }
   }

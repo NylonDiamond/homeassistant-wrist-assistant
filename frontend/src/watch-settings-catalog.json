@@ -7,7 +7,7 @@
       "settings": [
         {
           "key": "serverMode",
-          "devices": ["watch", "iphone", "wearos"],
+          "devices": ["watch", "iphone", "wearos", "android"],
           "type": "enum",
           "label": "Where to connect",
           "help": "Auto uses your home Wi-Fi when you are home and the internet when you are out. Leave it on Auto unless something is wrong.",
@@ -80,11 +80,12 @@
         },
         {
           "key": "topSectionDoubleTapAction",
-          "devices": ["watch", "iphone", "wearos"],
+          "devices": ["watch", "iphone", "wearos", "android"],
           "type": "enum",
           "label": "Double-tap the page title",
           "help": "Tap the name at the top of a page twice. Switch home needs two or more homes on this watch.",
           "phoneHelp": "Tap the top of the screen twice: the page's name, or the strip under the clock when the name is hidden. Switch home needs two or more homes on this iPhone.",
+          "androidHelp": "Tap the top of the screen twice: the page's name, or the strip under the clock when the name is hidden. Switch home needs two or more homes on this phone.",
           "default": "Disabled",
           "options": [
             {"value": "Disabled", "label": "Nothing"},
@@ -101,7 +102,7 @@
         },
         {
           "key": "topSectionDoubleTapSceneTargetId",
-          "devices": ["watch", "iphone", "wearos"],
+          "devices": ["watch", "iphone", "wearos", "android"],
           "type": "entity",
           "domain": "scene",
           "label": "Scene",
@@ -111,7 +112,7 @@
         },
         {
           "key": "topSectionDoubleTapScriptTargetId",
-          "devices": ["watch", "iphone", "wearos"],
+          "devices": ["watch", "iphone", "wearos", "android"],
           "type": "entity",
           "domain": "script",
           "label": "Script",
@@ -127,6 +128,7 @@
           "help": "Drag down from the top of a page.",
           "default": "Refresh",
           "iphoneDefault": "Pull Menu",
+          "androidDefault": "Pull Menu",
           "options": [
             {"value": "Disabled", "label": "Nothing"},
             {"value": "Refresh", "label": "Refresh the page"},
@@ -136,7 +138,7 @@
             {"value": "Activate Scene", "label": "Turn on a scene"},
             {"value": "Run Script", "label": "Run a script"},
             {"value": "Toggle First Tile", "label": "Toggle the first tile"},
-            {"value": "Pull Menu", "label": "Show a menu of icons", "devices": ["iphone"]}
+            {"value": "Pull Menu", "label": "Show a menu of icons", "devices": ["iphone", "android"]}
           ]
         },
         {
@@ -502,7 +504,7 @@
         },
         {
           "key": "pointControlShowHUD",
-          "devices": ["watch", "iphone", "wearos"],
+          "devices": ["watch", "iphone", "wearos", "android"],
           "type": "bool",
           "label": "Point control label",
           "help": "While point control runs, show the name of the device you point at. You set up what to point at in Rooms.",

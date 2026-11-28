@@ -511,7 +511,7 @@ export class WaRoomsEditor extends LitElement {
     void this.loadTitleJump(watchId);
   }
 
-  /** An iPhone's double-tap on the page title, read from its settings, so
+  /** A phone's double-tap on the page title, read from its settings, so
    * Rooms knows whether anything opens its room pages with Switch
    * automatically off. */
   private async loadTitleJump(watchId: string): Promise<void> {

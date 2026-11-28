@@ -193,18 +193,10 @@ describe("the catalog", () => {
       expect(s.devices, s.key).toBeDefined();
       // The Android apps read the same rows: a Wear OS watch every watch row
       // but the double pinch, an Android phone every iPhone row but the Page look.
-      // The title double-tap reached the iPhone (2026-11-26) before the Android phone app,
-      // and so did Where to connect and the point control label (2026-11-27).
-      expect([["watch"], ["watch", "wearos"], ["watch", "iphone", "wearos", "android"], ["watch", "iphone", "wearos"], ["iphone"]], s.key).toContainEqual([...s.devices!]);
+      expect([["watch"], ["watch", "wearos"], ["watch", "iphone", "wearos", "android"], ["iphone"]], s.key).toContainEqual([...s.devices!]);
     }
     expect(settings.filter((s) => s.devices!.includes("iphone")).length).toBe(37);
-    expect(settings.filter((s) => s.devices!.join() === "watch,iphone,wearos").map((s) => s.key)).toEqual([
-      "serverMode",
-      "topSectionDoubleTapAction",
-      "topSectionDoubleTapSceneTargetId",
-      "topSectionDoubleTapScriptTargetId",
-      "pointControlShowHUD",
-    ]);
+    expect(settings.filter((s) => s.devices!.includes("iphone") && !s.devices!.includes("android")).map((s) => s.key)).toEqual(["phonePageLook"]);
     expect(settings.filter((s) => !s.devices!.includes("watch")).map((s) => s.key)).toEqual(["phonePageLook"]);
     expect(
       settings
@@ -246,13 +238,13 @@ describe("the catalog", () => {
     for (const s of settings.filter((x) => x.phoneHelp !== undefined)) expect(s.devices, s.key).toContain("iphone");
   });
 
-  // The pull menu is the iPhone's own, so only the iPhone is offered it as
-  // a pull down; an Android phone and the watches are not.
+  // The pull menu is the phones' own, so only an iPhone and an Android
+  // phone are offered it as a pull down; the watches are not.
   it("offers a choice only to the devices it names", () => {
     const pull = (device: "watch" | "iphone", platform?: "android" | "wearos") =>
       catalogFor(device, WATCH_SETTINGS_CATALOG, platform).flatMap((sec) => sec.settings).find((x) => x.key === "pullDownAction")!.options!.map((o) => o.value);
     expect(pull("iphone")).toContain("Pull Menu");
-    expect(pull("iphone", "android")).not.toContain("Pull Menu");
+    expect(pull("iphone", "android")).toContain("Pull Menu");
     expect(pull("watch")).not.toContain("Pull Menu");
     expect(pull("watch", "wearos")).not.toContain("Pull Menu");
     expect(pull("watch")).toContain("Refresh");
@@ -261,13 +253,14 @@ describe("the catalog", () => {
     }
   });
 
-  // The iPhone's pull down opens the pull menu until changed; every other
-  // device, an Android phone too, keeps Refresh.
-  it("gives the iPhone its own default where the catalog says", () => {
+  // A phone's pull down opens the pull menu until changed: the iPhone's
+  // through `iphoneDefault`, an Android phone's through `androidDefault`.
+  // The watches keep Refresh.
+  it("gives each phone its own default where the catalog says", () => {
     const pullDefault = (device: "watch" | "iphone", platform?: "android" | "wearos") =>
       catalogFor(device, WATCH_SETTINGS_CATALOG, platform).flatMap((sec) => sec.settings).find((x) => x.key === "pullDownAction")!.default;
     expect(pullDefault("iphone")).toBe("Pull Menu");
-    expect(pullDefault("iphone", "android")).toBe("Refresh");
+    expect(pullDefault("iphone", "android")).toBe("Pull Menu");
     expect(pullDefault("watch")).toBe("Refresh");
     expect(pullDefault("watch", "wearos")).toBe("Refresh");
   });

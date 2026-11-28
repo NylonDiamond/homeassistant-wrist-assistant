@@ -55,14 +55,11 @@ def _document_keys(setting: dict) -> set[str]:
     return keys
 
 
-IPHONE_BEFORE_ANDROID = {
-    "phonePageLook",
-    "topSectionDoubleTapAction",
-    "topSectionDoubleTapSceneTargetId",
-    "topSectionDoubleTapScriptTargetId",
-    "serverMode",
-    "pointControlShowHUD",
-}
+# The iPhone rows an Android phone does not read: the Page look, which it
+# draws one way only. The title double-tap, Where to connect and the point
+# control label reached the iPhone first (2026-11-26 and 2026-11-27) and the
+# Android phone on 2026-11-27.
+IPHONE_ONLY = {"phonePageLook"}
 
 
 def test_every_catalog_setting_says_which_devices_read_it() -> None:
@@ -77,15 +74,10 @@ def test_every_catalog_setting_says_which_devices_read_it() -> None:
             # a watch row (`wearos`), an Android phone an iPhone row (`android`).
             ["watch", "wearos"],
             ["watch", "iphone", "wearos", "android"],
-            # The title double-tap reached the iPhone (2026-11-26) before
-            # the Android phone app, and so did Where to connect and the
-            # point control label (2026-11-27).
-            ["watch", "iphone", "wearos"],
         ), setting["key"]
         devices = setting["devices"]
-        # An Android phone reads every iPhone row but the Page look, which
-        # it draws one way only, and the rows not in it yet.
-        if setting["key"] not in IPHONE_BEFORE_ANDROID:
+        # An Android phone reads every iPhone row but the Page look.
+        if setting["key"] not in IPHONE_ONLY:
             assert ("android" in devices) == ("iphone" in devices), setting["key"]
 
 

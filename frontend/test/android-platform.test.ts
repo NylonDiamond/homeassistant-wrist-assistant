@@ -241,23 +241,28 @@ describe("the settings an Android device reads", () => {
     expect(appleCrown.label).toBe("Digital Crown speed");
   });
 
-  it("on an Android phone: every iPhone row but the Page look, the title double-tap, Where to connect and the point control label", () => {
+  it("on an Android phone: every iPhone row but the Page look", () => {
     const android = keys(catalogFor("iphone", undefined, "android"));
     const iphone = keys(catalogFor("iphone"));
-    // The iPhone's title double-tap (2026-11-26), Where to connect and the
-    // point control label (2026-11-27) are not in the Android app yet.
-    const iphoneOnly = [
+    expect(iphone).toContain("phonePageLook");
+    expect(android).not.toContain("phonePageLook");
+    expect(iphone.filter((k) => k !== "phonePageLook")).toEqual(android);
+    // The title double-tap, Where to connect and the point control label
+    // reached the Android phone on 2026-11-27, a day after the iPhone.
+    for (const key of [
       "serverMode",
-      "phonePageLook",
       "topSectionDoubleTapAction",
       "topSectionDoubleTapSceneTargetId",
       "topSectionDoubleTapScriptTargetId",
       "pointControlShowHUD",
-    ];
-    for (const key of iphoneOnly) {
-      expect(iphone).toContain(key);
-      expect(android).not.toContain(key);
-    }
-    expect(iphone.filter((k) => !iphoneOnly.includes(k))).toEqual(android);
+    ]) expect(android).toContain(key);
+  });
+
+  it("names the phone, not the iPhone, in an Android phone's double-tap help", () => {
+    const row = (platform?: "android") => catalogFor("iphone", undefined, platform).flatMap((s) => s.settings).find((s) => s.key === "topSectionDoubleTapAction")!;
+    expect(row("android").help).toContain("two or more homes on this phone.");
+    expect(row("android").help).not.toContain("iPhone");
+    expect(row().help).toContain("two or more homes on this iPhone.");
+    expect(row("android").options!.map((o) => o.value)).toEqual(row().options!.map((o) => o.value));
   });
 });

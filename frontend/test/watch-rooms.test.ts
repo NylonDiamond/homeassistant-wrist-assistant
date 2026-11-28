@@ -965,6 +965,21 @@ describe("the Rooms tab explains itself", () => {
     expect(flat(renderRoomsBody(phoneOn))).not.toContain(rulesOffLine(phoneOn));
   });
 
+  // The Android phone has the title double-tap too (2026-11-27), so a Room
+  // Jump set there opens its room pages with Switch automatically off, in
+  // its own word.
+  it("counts an Android phone's title double-tap as the iPhone's", () => {
+    for (const [extra, word] of [[{}, "iPhone"], [{ android: true }, "phone"]] as const) {
+      const jump = host({ schemaVersion: 1 }, { home: true, phone: true, titleJump: true, ...extra });
+      expect(listUnused(jump)).toBe(false);
+      expect(switchingLine(jump)).toBe(`Switch automatically is off, so the ${word} changes pages only when you double-tap the page title.`);
+      expect(rulesOffLine(jump)).toBe("Switch automatically is off. These pages open when you double-tap the page title.");
+      const plain = host({ schemaVersion: 1 }, { home: true, phone: true, titleJump: false, ...extra });
+      expect(listUnused(plain)).toBe(true);
+      expect(flat(renderRoomsBody(plain))).toContain("set Double-tap the page title to Jump to a room in Settings");
+    }
+  });
+
   it("does not call a Room Jump switch automatic", () => {
     const tap = host(behavior({ roomAutoSwitchEnabled: false, roomQuickJumpEnabled: false, topSectionDoubleTapAction: "Room Jump" }));
     expect(tap.view.switching).toBe(true);

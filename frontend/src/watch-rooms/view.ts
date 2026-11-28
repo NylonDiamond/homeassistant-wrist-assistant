@@ -47,7 +47,6 @@ import {
   HOME_AUTO_SWITCH_LABEL,
   HOME_ROOMS_MAIN_HOUSE_TEXT,
   HOME_ROOMS_MAIN_HOUSE_WEAR_TEXT,
-  HOME_ROOMS_ANDROID_TEXT,
   HOME_ROOMS_PHONE_JUMP_TEXT,
   HOME_ROOMS_PHONE_TEXT,
   ZONES_UNREADABLE_TEXT,
@@ -133,16 +132,17 @@ export interface RoomsViewHost {
   mode?: RoomsEditorMode;
   /** Go to the other tab. Absent, the address is swapped in place. */
   openMode?(mode: RoomsEditorMode): void;
-  /** An iPhone's double-tap on the page title jumps to a room (its
+  /** A phone's double-tap on the page title jumps to a room (its
    * `behavior` record's `topSectionDoubleTapAction`). Undefined until read. */
   titleJump?: boolean;
-  /** Open this iPhone's Settings at the double-tap. */
+  /** Open this phone's Settings at the double-tap. */
   openSettings?(): void;
 }
 
-/** An iPhone, not an Android phone: only it has the double-tap row. */
-function isIphone(host: Pick<RoomsViewHost, "phone" | "android">): boolean {
-  return host.phone === true && host.android !== true;
+/** A phone: an iPhone or an Android phone, which both have the double-tap
+ * row in their own settings. */
+function isPhone(host: Pick<RoomsViewHost, "phone">): boolean {
+  return host.phone === true;
 }
 
 /** The screen a page is laid out on: the phone's pages area, else the
@@ -364,12 +364,12 @@ function renderSwitching(host: RoomsViewHost): TemplateResult {
   const triggers = ROOM_RULES.switching.triggers;
   const help = triggers.find((t) => t.value === host.view.trigger)?.help ?? "";
   return html`<div class="rm-status-switch">${checkField(label, on, set)}</div>
-    ${home ? (isIphone(host)
+    ${home ? (isPhone(host)
       ? html`<p class="rm-help rm-status-wide rm-main-house rm-phone-jump">
           <span>${host.titleJump === true ? HOME_ROOMS_PHONE_JUMP_TEXT : HOME_ROOMS_PHONE_TEXT}</span>
           ${host.openSettings === undefined ? nothing : html`<button type="button" class="rm-btn rm-small" @click=${() => host.openSettings?.()}>Open Settings</button>`}
         </p>`
-      : html`<p class="rm-help rm-status-wide rm-main-house">${host.phone === true ? HOME_ROOMS_ANDROID_TEXT : host.wear === true ? HOME_ROOMS_MAIN_HOUSE_WEAR_TEXT : HOME_ROOMS_MAIN_HOUSE_TEXT}</p>`)
+      : html`<p class="rm-help rm-status-wide rm-main-house">${host.wear === true ? HOME_ROOMS_MAIN_HOUSE_WEAR_TEXT : HOME_ROOMS_MAIN_HOUSE_TEXT}</p>`)
       : on ? html`<div class="rm-when rm-status-wide">
         <span class="rm-when-l" id="rm-when-l">Switch</span>
         <div class="seg rm-seg" role="radiogroup" aria-labelledby="rm-when-l">
@@ -388,7 +388,7 @@ function renderSwitching(host: RoomsViewHost): TemplateResult {
 export function switchingLine(host: RoomsViewHost): string {
   const device = deviceWord(host);
   if (!switchingOn(host)) {
-    if (isIphone(host) && host.titleJump === true) return `${HOME_AUTO_SWITCH_LABEL} is off, so the ${device} changes pages only when you double-tap the page title.`;
+    if (isPhone(host) && host.titleJump === true) return `${HOME_AUTO_SWITCH_LABEL} is off, so the ${device} changes pages only when you double-tap the page title.`;
     return host.home === true
       ? `${HOME_AUTO_SWITCH_LABEL} is off, so the ${device} does not change pages when you walk in.`
       : "Room pages are off. Turn on Switch pages by room to use the pages below.";
@@ -401,7 +401,7 @@ export function switchingLine(host: RoomsViewHost): string {
  * home still opens them with its main home's Room Jump; on a phone or a
  * watch's main home nothing reads them. */
 export function rulesOffLine(host: RoomsViewHost): string {
-  if (isIphone(host) && host.titleJump === true) return `${HOME_AUTO_SWITCH_LABEL} is off. These pages open when you double-tap the page title.`;
+  if (isPhone(host) && host.titleJump === true) return `${HOME_AUTO_SWITCH_LABEL} is off. These pages open when you double-tap the page title.`;
   if (!listUnused(host)) return `${HOME_AUTO_SWITCH_LABEL} is off. These pages still open with Room Jump.`;
   return `Nothing opens these pages until you turn on ${switchLabel(host)} at the top.`;
 }
@@ -415,7 +415,7 @@ function switchLabel(host: RoomsViewHost): string {
  * main home or on a phone. A watch on another home may still Room Jump. */
 export function listUnused(host: RoomsViewHost): boolean {
   if (switchingOn(host)) return false;
-  if (host.phone === true) return !(isIphone(host) && host.titleJump === true);
+  if (host.phone === true) return !(isPhone(host) && host.titleJump === true);
   return host.home !== true;
 }
 

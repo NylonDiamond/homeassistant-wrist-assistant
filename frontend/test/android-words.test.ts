@@ -48,7 +48,7 @@ import {
   pairOpenAppText,
   pairRemoteWarning,
 } from "../src/watch-settings.js";
-import { HOME_ROOMS_ANDROID_TEXT, HOME_ROOMS_MAIN_HOUSE_TEXT, HOME_ROOMS_MAIN_HOUSE_WEAR_TEXT, HOME_ROOMS_PHONE_TEXT } from "../src/watch-rooms/model.js";
+import { HOME_ROOMS_MAIN_HOUSE_TEXT, HOME_ROOMS_MAIN_HOUSE_WEAR_TEXT, HOME_ROOMS_PHONE_TEXT } from "../src/watch-rooms/model.js";
 
 const flat = (v: unknown): string => {
   if (Array.isArray(v)) return v.map(flat).join("");
@@ -210,10 +210,9 @@ describe("a phone's own records and settings", () => {
     expect(row().help).toContain("iOS sets this time itself");
   });
 
-  it("leave the double pinch out of a Wear watch's rooms, and name an Android phone", () => {
+  it("leave the double pinch out of a Wear watch's rooms, and point a phone at its Settings", () => {
     expect(HOME_ROOMS_MAIN_HOUSE_WEAR_TEXT).not.toMatch(/pinch/);
     expect(HOME_ROOMS_MAIN_HOUSE_TEXT).toMatch(/double pinch/);
-    expect(HOME_ROOMS_ANDROID_TEXT).toBe("On the phone, Switch automatically is the only way these pages open.");
     expect(HOME_ROOMS_PHONE_TEXT).toBe("To jump to your room's page yourself, set Double-tap the page title to Jump to a room in Settings.");
   });
 

@@ -82,7 +82,7 @@ export interface CatalogSetting {
    * settings (`PHONE_BEHAVIOR_KEYS`, which a test holds to this file).
    * The Android apps read the same rows: `wearos` beside `watch` for a row a
    * Wear OS watch reads (every watch row but the double pinch, which Wear
-   * has no gesture for), `android` beside every `iphone`.
+   * has no gesture for), `android` beside every `iphone` but the Page look.
    * Optional for a catalog built in a test. */
   devices?: readonly CatalogDevice[];
   type: "bool" | "enum" | "color" | "entity" | "number" | "domains" | "motionGestures";
@@ -114,10 +114,15 @@ export interface CatalogSetting {
   phoneHelp?: string;
   /** On an iPhone, the default in place of `default`, where it differs
    * from the watch's. `catalogFor("iphone")` puts it in `default`; an
-   * Android phone keeps `default`. */
+   * Android phone reads `androidDefault` instead. */
   iphoneDefault?: SettingValue;
+  /** On an Android phone, the default in place of `default`, read the way
+   * an iPhone reads `iphoneDefault`: `catalogFor("iphone", catalog,
+   * "android")` puts it in `default`. Absent, an Android phone keeps
+   * `default`. */
+  androidDefault?: SettingValue;
   /** On an Android phone, the help line in place of `phoneHelp`, for a row
-   * whose iPhone words name iOS. `catalogFor("iphone", catalog, "android")`
+   * whose iPhone words name iOS or the iPhone. `catalogFor("iphone", catalog, "android")`
    * puts it in `help`. */
   androidHelp?: string;
   /** On a Wear OS watch, the label and help line in place of `label` and
@@ -698,6 +703,7 @@ export function catalogFor(
       ...(s.phoneHelp === undefined ? {} : { help: s.phoneHelp }),
       ...(reader === "android" && s.androidHelp !== undefined ? { help: s.androidHelp } : {}),
       ...(reader === "iphone" && s.iphoneDefault !== undefined ? { default: s.iphoneDefault } : {}),
+      ...(reader === "android" && s.androidDefault !== undefined ? { default: s.androidDefault } : {}),
     };
   };
   return catalog.sections
